@@ -1,0 +1,63 @@
+## ==========================================
+## .NET / C# / Visual Studio Core Build Outputs
+## ==========================================
+[Dd]ebug/
+[Rr]elease/
+[Bb]in/
+[Oo]bj/
+x64/
+x86/
+[Ww][Ii][Nn]32/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+[Ll]og/
+[Ll]ogs/
+*.binlog
+
+## ==========================================
+## Visual Studio User & Environment Specific Files
+## ==========================================
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.sln.ide/
+*.suo
+*.rsuser
+
+## ==========================================
+## NuGet & Package Restore Files
+## ==========================================
+*.nuget.props
+*.nuget.targets
+project.lock.json
+project.fragment.lock.json
+**/packages/
+
+## ==========================================
+## OS-Specific Operating System Junk
+## ==========================================
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+## ==========================================
+## Avalonia-Specific & Dev Tool Cache Files
+## ==========================================
+# Avalonia UI compilation and diagnostic caches
+.avalonia/
+*.cache
+*.[Cc]ache
+!*.[Cc]ache/
+
+## ==========================================
+## Test & Profiler Results
+## ==========================================
+[Tt]est[Rr]esult*/
+[Bb]uild[Ll]og.*
+*.psess
+*.vsp
+*.vspx
