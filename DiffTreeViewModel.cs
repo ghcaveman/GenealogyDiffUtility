@@ -1,4 +1,7 @@
-﻿using System.Collections.ObjectModel;
+﻿using System;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.Linq;
 
 namespace GenealogyDiffUtility
 {
@@ -6,7 +9,7 @@ namespace GenealogyDiffUtility
     {
         private GedcomTreeContext _context = new();
         private string _fileName = "No File Loaded";
-        private string _rawFileText = string.Empty; // Added backing field
+        private string _rawFileText = string.Empty;
 
         public string FileName
         {
@@ -14,7 +17,6 @@ namespace GenealogyDiffUtility
             set => RaiseAndSetIfChanged(ref _fileName, value);
         }
 
-        // Added missing property for the Text tab text-box binding
         public string RawFileText
         {
             get => _rawFileText;
@@ -25,39 +27,55 @@ namespace GenealogyDiffUtility
         public string GedcomVersion => _context.Header.GedcomVersion;
         public string CharacterEncoding => _context.Header.CharacterEncoding;
 
-        public ObservableCollection<GedcomHeader> HeaderNodes { get; } = new();
-        public ObservableCollection<IndividualNode> IndividualNodes { get; } = new();
-        public ObservableCollection<FamilyNode> FamilyNodes { get; } = new();
-        public ObservableCollection<SourceNode> SourceNodes { get; } = new();
-        public ObservableCollection<string> RepositoryNodes { get; } = new();
+        // The unified hierarchical collection your TreeView control will bind onto
+        public ObservableCollection<TreeGroupNode> TreeNodes { get; } = new();
 
-        // Updated signature to accept 3 arguments
         public void LoadTree(GedcomTreeContext context, string fileName, string rawText)
         {
             _context = context;
             FileName = fileName;
-            RawFileText = rawText; // Sets the text tab display string
+            RawFileText = rawText;
 
             OnPropertyChanged(nameof(SourceSoftware));
             OnPropertyChanged(nameof(GedcomVersion));
             OnPropertyChanged(nameof(CharacterEncoding));
 
-            HeaderNodes.Clear();
-            HeaderNodes.Add(_context.Header);
+            TreeNodes.Clear();
 
-            IndividualNodes.Clear();
-            foreach (var ind in _context.Individuals.Values)
-                IndividualNodes.Add(ind);
+            // 1. Header Node
+            TreeNodes.Add(new TreeGroupNode
+            {
+                Name = "Header",
+                Children = new List<object> { _context.Header }
+            });
 
-            FamilyNodes.Clear();
-            foreach (var fam in _context.Families.Values)
-                FamilyNodes.Add(fam);
+            // 2. Individuals Node (Grouped dynamically by Surname)
+            var surnameGroups = _context.Individuals.Values
+                .GroupBy(p => string.IsNullOrWhiteSpace(p.LastName) ? "Unknown" : p.LastName)
+                .OrderBy(g => g.Key)
+                .Select(g => new SurnameGroupNode { Surname = g.Key, People = g.ToList() })
+                .Cast<object>()
+                .ToList();
 
-            SourceNodes.Clear();
-            foreach (var src in _context.Sources.Values)
-                SourceNodes.Add(src);
+            TreeNodes.Add(new TreeGroupNode
+            {
+                Name = $"Individuals ({_context.Individuals.Count})",
+                Children = surnameGroups
+            });
 
-            RepositoryNodes.Clear();
+            // 3. Families Node
+            TreeNodes.Add(new TreeGroupNode
+            {
+                Name = $"Families ({_context.Families.Count})",
+                Children = _context.Families.Values.Cast<object>().ToList()
+            });
+
+            // 4. Sources Node
+            TreeNodes.Add(new TreeGroupNode
+            {
+                Name = $"Sources ({_context.Sources.Count})",
+                Children = _context.Sources.Values.Cast<object>().ToList()
+            });
         }
     }
 }

@@ -3,7 +3,6 @@ using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using System;
 using System.IO;
-using System.Threading.Tasks;
 
 namespace GenealogyDiffUtility
 {
@@ -16,10 +15,8 @@ namespace GenealogyDiffUtility
 
         private async void OnBrowseClick(object? sender, RoutedEventArgs e)
         {
-            // Safely verify the current data context matches our targeted ViewModel type
             if (DataContext is not DiffTreeViewModel vm) return;
 
-            // Fetch the visual window context required to trigger file pickers safely
             var topLevel = TopLevel.GetTopLevel(this);
             if (topLevel == null) return;
 
@@ -36,13 +33,8 @@ namespace GenealogyDiffUtility
 
                 try
                 {
-                    // Read the file context raw for our Text View Tab
                     string rawText = await File.ReadAllTextAsync(filePath);
-
-                    // Run the file parser loop structure
                     GedcomTreeContext context = GedcomParser.Parse(filePath);
-
-                    // Directly refresh our data model lists inside the view model
                     vm.LoadTree(context, Path.GetFileName(filePath), rawText);
                 }
                 catch (Exception ex)

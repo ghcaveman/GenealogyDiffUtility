@@ -6,6 +6,10 @@ namespace GenealogyDiffUtility
     {
         public string Id { get; set; } = string.Empty; // The original ID like @I1@
         public string FullName { get; set; } = string.Empty;
+
+        // Added the missing property that the parser and tree groups need
+        public string LastName { get; set; } = string.Empty;
+
         public string Gender { get; set; } = string.Empty;
 
         // Tracking vital events
