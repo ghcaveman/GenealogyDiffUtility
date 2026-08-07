@@ -5,7 +5,8 @@
              xmlns:vm="clr-namespace:GenealogyDiffUtility"
              mc:Ignorable="d" d:DesignWidth="500" d:DesignHeight="600"
              x:Class="GenealogyDiffUtility.GenealogyControl"
-             x:DataType="vm:DiffTreeViewModel">
+             x:DataType="vm:DiffTreeViewModel"
+             x:CompileBindings="False">
     
     <Grid RowDefinitions="Auto, Auto, *">
         <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="10" Margin="0,0,0,10">
@@ -14,18 +15,21 @@
         </StackPanel>
 
         <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="5" Margin="0,0,0,10">
-            <TextBlock Text="Software:" FontWeight="SemiBold"/>
+            <TextBlock Text="Source:" FontWeight="SemiBold"/>
             <TextBlock Text="{Binding SourceSoftware}"/>
             <TextBlock Text="| Encoding:" FontWeight="SemiBold" Margin="10,0,0,0"/>
             <TextBlock Text="{Binding CharacterEncoding}"/>
+            <TextBlock Text="| Version:" FontWeight="SemiBold" Margin="10,0,0,0"/>
+            <TextBlock Text="{Binding GedcomVersion}"/>
         </StackPanel>
         
         <TabControl Grid.Row="2">
             <TabItem Header="Tree">
-                <TreeView ItemsSource="{Binding TreeNodes}">
+                <TreeView x:Name="TreeView" ItemsSource="{Binding TreeNodes}">
                     <TreeView.Styles>
                         <Style Selector="TreeViewItem">
-                            <Setter Property="IsExpanded" Value="False"/>
+                            <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"/>
+                            <Setter Property="IsSelected" Value="{Binding IsSelected, Mode=TwoWay}"/>
                         </Style>
                     </TreeView.Styles>
                     <TreeView.DataTemplates>
@@ -38,7 +42,7 @@
                         </TreeDataTemplate>
 
                         <DataTemplate DataType="vm:IndividualNode">
-                            <TextBlock Text="{Binding FullName}" Margin="5,0,0,0"/>
+                            <TextBlock Text="{Binding DisplayName}" Margin="5,0,0,0"/>
                         </DataTemplate>
 
                         <DataTemplate DataType="vm:FamilyNode">
@@ -47,6 +51,14 @@
 
                         <DataTemplate DataType="vm:SourceNode">
                             <TextBlock Text="{Binding Title}" Margin="5,0,0,0"/>
+                        </DataTemplate>
+
+                        <DataTemplate DataType="vm:RepositoryNode">
+                            <TextBlock Text="{Binding Name}" Margin="5,0,0,0"/>
+                        </DataTemplate>
+
+                        <DataTemplate DataType="vm:NoteNode">
+                            <TextBlock Text="{Binding DisplayName}" Margin="5,0,0,0" TextWrapping="Wrap"/>
                         </DataTemplate>
 
                         <DataTemplate DataType="vm:GedcomHeader">

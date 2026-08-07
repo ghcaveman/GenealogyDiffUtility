@@ -23,7 +23,11 @@ namespace GenealogyDiffUtility
             var files = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
             {
                 Title = "Select GEDCOM File",
-                AllowMultiple = false
+                AllowMultiple = false,
+                FileTypeFilter = new[]
+                {
+                    new FilePickerFileType("GEDCOM Files") { Patterns = new[] { "*.ged" } }
+                }
             });
 
             if (files.Count > 0)

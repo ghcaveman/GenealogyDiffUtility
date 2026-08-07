@@ -2,7 +2,7 @@
 
 namespace GenealogyDiffUtility
 {
-    internal class GedcomHeader
+    internal class GedcomHeader : TreeNodeBase
     {
         public string SourceSoftware { get; set; } = string.Empty; // e.g., Ancestry, RootsMagic
         public string SoftwareVersion { get; set; } = string.Empty;
@@ -11,4 +11,3 @@ namespace GenealogyDiffUtility
         public DateTime? FileCreationDate { get; set; }
     }
 }
-
