@@ -1,0 +1,94 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="clr-namespace:GenealogyDiffUtility"
+             mc:Ignorable="d" d:DesignWidth="500" d:DesignHeight="600"
+             x:Class="GenealogyDiffUtility.GenealogyControl"
+             x:DataType="vm:DiffTreeViewModel">
+    
+    <Grid RowDefinitions="Auto, Auto, *">
+        <!-- Top File Select Control Row -->
+        <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="10" Margin="0,0,0,10">
+            <Button Content="Select File" Click="OnBrowseClick"/>
+            <TextBlock Text="{Binding FileName}" VerticalAlignment="Center" FontWeight="SemiBold" Foreground="SteelBlue"/>
+        </StackPanel>
+
+        <!-- Dynamic File Metadata Overview Row -->
+        <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="5" Margin="0,0,0,10">
+            <TextBlock Text="Software:" FontWeight="SemiBold"/>
+            <TextBlock Text="{Binding SourceSoftware}"/>
+            <TextBlock Text="| Encoding:" FontWeight="SemiBold" Margin="10,0,0,0"/>
+            <TextBlock Text="{Binding CharacterEncoding}"/>
+        </StackPanel>
+        
+        <!-- Main Three-Tab Workspace Panel Layout -->
+        <TabControl Grid.Row="2">
+            <!-- 1. HIERARCHICAL TREE STRUCTURAL VIEW -->
+            <TabItem Header="Tree">
+                <TreeView>
+                    <!-- Header Record Folder -->
+                    <TreeViewItem Header="Header" ItemsSource="{Binding HeaderNodes}">
+                        <TreeViewItem.ItemTemplate>
+                            <DataTemplate x:DataType="vm:GedcomHeader">
+                                <StackPanel>
+                                    <TextBlock Text="{Binding SourceSoftware, StringFormat='Software: {0}'}"/>
+                                    <TextBlock Text="{Binding GedcomVersion, StringFormat='Version: {0}'}"/>
+                                    <TextBlock Text="{Binding CharacterEncoding, StringFormat='Encoding: {0}'}"/>
+                                </StackPanel>
+                            </DataTemplate>
+                        </TreeViewItem.ItemTemplate>
+                    </TreeViewItem>
+                    
+                    <!-- Individuals Folder -->
+                    <TreeViewItem Header="Individuals" ItemsSource="{Binding IndividualNodes}">
+                        <TreeViewItem.ItemTemplate>
+                            <DataTemplate x:DataType="vm:IndividualNode">
+                                <TextBlock Text="{Binding FullName}"/>
+                            </DataTemplate>
+                        </TreeViewItem.ItemTemplate>
+                    </TreeViewItem>
+                    
+                    <!-- Families Folder -->
+                    <TreeViewItem Header="Families" ItemsSource="{Binding FamilyNodes}">
+                        <TreeViewItem.ItemTemplate>
+                            <DataTemplate x:DataType="vm:FamilyNode">
+                                <TextBlock Text="{Binding Id, StringFormat='Family ID: {0}'}"/>
+                            </DataTemplate>
+                        </TreeViewItem.ItemTemplate>
+                    </TreeViewItem>
+                    
+                    <!-- Sources Folder -->
+                    <TreeViewItem Header="Sources" ItemsSource="{Binding SourceNodes}">
+                        <TreeViewItem.ItemTemplate>
+                            <DataTemplate x:DataType="vm:SourceNode">
+                                <TextBlock Text="{Binding Title}"/>
+                            </DataTemplate>
+                        </TreeViewItem.ItemTemplate>
+                    </TreeViewItem>
+                    
+                    <!-- Repositories Placeholder Folder -->
+                    <TreeViewItem Header="Repositories" ItemsSource="{Binding RepositoryNodes}"/>
+                </TreeView>
+            </TabItem>
+
+            <!-- 2. RAW TEXT LINE-BY-LINE VALUATION VIEW -->
+            <TabItem Header="Text">
+                <TextBox Text="{Binding RawFileText}" 
+                         IsReadOnly="True" 
+                         AcceptsReturn="True" 
+                         TextWrapping="NoWrap" 
+                         FontFamily="Courier New"/>
+            </TabItem>
+
+            <!-- 3. COMPARATIVE DIFF WORKSPACE (UNIMPLEMENTED) -->
+            <TabItem Header="Diff">
+                <TextBlock Text="Diff View - Unimplemented" 
+                           HorizontalAlignment="Center" 
+                           VerticalAlignment="Center" 
+                           Foreground="Gray"/>
+            </TabItem>
+        </TabControl>
+    </Grid>
+</UserControl>
+
