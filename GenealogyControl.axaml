@@ -21,6 +21,8 @@
             <TextBlock Text="{Binding CharacterEncoding}"/>
             <TextBlock Text="| Version:" FontWeight="SemiBold" Margin="10,0,0,0"/>
             <TextBlock Text="{Binding GedcomVersion}"/>
+            <Button Content="▲" Click="OnNavigateUpClick" Margin="15,0,0,0" Padding="6,2" ToolTip.Tip="Previous mismatch" x:Name="UpButton"/>
+            <Button Content="▼" Click="OnNavigateDownClick" Padding="6,2" ToolTip.Tip="Next mismatch" x:Name="DownButton"/>
         </StackPanel>
         
         <TabControl Grid.Row="2">

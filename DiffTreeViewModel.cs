@@ -19,6 +19,12 @@ namespace GenealogyDiffUtility
         /// </summary>
         public event EventHandler<TreeSyncEventArgs>? SyncRequested;
 
+        /// <summary>
+        /// Raised after <see cref="ApplySync"/> completes, so the view layer
+        /// can scroll the target node into view.
+        /// </summary>
+        public event EventHandler<TreeSyncEventArgs>? ScrollToNodeRequested;
+
         public string FileName
         {
             get => _fileName;
@@ -150,6 +156,55 @@ namespace GenealogyDiffUtility
         }
 
         /// <summary>
+        /// Returns the stable key of the currently selected node, or null if none.
+        /// </summary>
+        public string? GetSelectedNodeKey()
+        {
+            foreach (var tn in _nodeMap.Values)
+            {
+                if (tn.IsSelected)
+                {
+                    return TreeNodeKeys.GetKey(tn);
+                }
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// Selects the given node in this tree, expanding ancestors and scrolling
+        /// it into view.
+        /// </summary>
+        public void SelectNode(object node)
+        {
+            if (node is not TreeNodeBase targetNode) return;
+
+            // Clear selection on all other nodes first
+            foreach (var other in _nodeMap.Values)
+            {
+                if (other.IsSelected && !ReferenceEquals(other, targetNode))
+                {
+                    other.IsSelected = false;
+                }
+            }
+
+            // Select the target node
+            targetNode.IsSelected = true;
+
+            // Expand ancestors so the node is visible, then scroll to it
+            var path = FindPath(node);
+            if (path != null)
+            {
+                ExpandAncestors(path);
+                ScrollToNodeRequested?.Invoke(this, new TreeSyncEventArgs
+                {
+                    Path = path,
+                    SelectedSet = true,
+                    IsSelectedValue = true
+                });
+            }
+        }
+
+        /// <summary>
         /// Assigns <see cref="IndividualNode.CollisionIndex"/> values to individuals
         /// that share a name and lack a birth date, so their stable identity keys
         /// remain unique. The order is deterministic (by record Id) so two exports
@@ -242,6 +297,20 @@ namespace GenealogyDiffUtility
                     }
                 }
                 tn.IsSelected = e.IsSelectedValue;
+            }
+
+            // Notify the view layer to scroll the target node into view.
+            // Only scroll when the node is being selected or expanded, not
+            // when it is being deselected or collapsed (which would cause
+            // the receiving tree to jump to the wrong node when the user
+            // clicks a new node).
+            bool shouldScroll =
+                (e.SelectedSet && e.IsSelectedValue) ||
+                (e.ExpandedSet && e.IsExpandedValue);
+
+            if (shouldScroll)
+            {
+                ScrollToNodeRequested?.Invoke(this, e);
             }
         }
 
