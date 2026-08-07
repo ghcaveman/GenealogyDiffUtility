@@ -50,10 +50,12 @@
                         </DataTemplate>
 
                         <DataTemplate DataType="vm:GedcomHeader">
-                            <StackPanel Margin="5,0,0,0">
-                                <TextBlock Text="{Binding SourceSoftware, StringFormat='Software: {0}'}"/>
-                                <TextBlock Text="{Binding GedcomVersion, StringFormat='GEDCOM: {0}'}"/>
-                                <TextBlock Text="{Binding CharacterEncoding, StringFormat='Encoding: {0}'}"/>
+                            <StackPanel Margin="5,0,0,0" Spacing="2">
+                                <TextBlock Text="{Binding SourceSoftware, StringFormat='Source Software: {0}'}"/>
+                                <TextBlock Text="{Binding SoftwareVersion, StringFormat='Software Version: {0}'}"/>
+                                <TextBlock Text="{Binding GedcomVersion, StringFormat='GEDCOM Version: {0}'}"/>
+                                <TextBlock Text="{Binding CharacterEncoding, StringFormat='Character Encoding: {0}'}"/>
+                                <TextBlock Text="{Binding FileCreationDate, StringFormat='Created Date: {0:yyyy-MM-dd}'}"/>
                             </StackPanel>
                         </DataTemplate>
                     </TreeView.DataTemplates>

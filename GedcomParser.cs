@@ -1,4 +1,5 @@
-﻿using System.IO;
+﻿using System;
+using System.IO;
 
 namespace GenealogyDiffUtility
 {
@@ -12,7 +13,11 @@ namespace GenealogyDiffUtility
             IndividualNode? currentIndividual = null;
             FamilyNode? currentFamily = null;
             SourceNode? currentSource = null;
-            string currentSection = ""; // Tracks if we are in HEAD, INDI, FAM, etc.
+            string currentSection = "";
+
+            // Sub-context flags specifically for the Header block
+            bool insideHeadSour = false;
+            bool insideHeadGedc = false;
 
             using (var reader = new StreamReader(filePath))
             {
@@ -22,23 +27,22 @@ namespace GenealogyDiffUtility
                     string trimmed = line.Trim();
                     if (string.IsNullOrWhiteSpace(trimmed)) continue;
 
-                    // Split into maximum 3 parts: Level, Tag/ID, Value
                     string[] parts = trimmed.Split(' ', 3);
                     if (parts.Length < 2) continue;
 
                     string level = parts[0];
 
-                    // Handle Top-Level Level 0 Records
                     if (level == "0")
                     {
-                        // Reset all active contexts
                         currentIndividual = null;
                         currentFamily = null;
                         currentSource = null;
+                        insideHeadSour = false;
+                        insideHeadGedc = false;
 
                         if (parts.Length == 2)
                         {
-                            currentSection = parts[1]; // e.g., "0 HEAD" or "0 TRLR"
+                            currentSection = parts[1];
                             continue;
                         }
 
@@ -66,35 +70,53 @@ namespace GenealogyDiffUtility
                         continue;
                     }
 
-                    // Handle Sub-Level tags based on current level 0 context record
                     string tag = parts[1];
                     string data = parts.Length > 2 ? parts[2] : string.Empty;
 
+                    // --- HEADER PARSING SYSTEM ---
                     if (currentSection == "HEAD")
                     {
-                        if (tag == "SOUR") context.Header.SourceSoftware = data;
-                        else if (tag == "CHAR") context.Header.CharacterEncoding = data;
-                        else if (tag == "VERS" && trimmed.Contains("GEDC")) context.Header.GedcomVersion = data;
+                        if (level == "1")
+                        {
+                            // Reset level 1 flags when changing sub-structures
+                            insideHeadSour = (tag == "SOUR");
+                            insideHeadGedc = (tag == "GEDC");
+
+                            if (tag == "CHAR")
+                                context.Header.CharacterEncoding = data;
+                            else if (tag == "DATE")
+                            {
+                                if (DateTime.TryParse(data, out DateTime parsedDate))
+                                    context.Header.FileCreationDate = parsedDate;
+                            }
+                        }
+                        else if (level == "2")
+                        {
+                            if (insideHeadSour && tag == "VERS")
+                                context.Header.SoftwareVersion = data;
+                            else if (insideHeadGedc && tag == "VERS")
+                                context.Header.GedcomVersion = data;
+                        }
+
+                        if (insideHeadSour && level == "1")
+                            context.Header.SourceSoftware = data;
                     }
+
+                    // --- INDIVIDUALS PARSING SYSTEM ---
                     else if (currentSection == "INDI" && currentIndividual != null)
                     {
                         if (tag == "NAME")
                         {
                             currentIndividual.FullName = data.Replace("/", "").Trim();
-                            // Simple surname extraction logic looking between slashes
                             if (data.Contains("/"))
                             {
                                 int start = data.IndexOf('/') + 1;
                                 int end = data.LastIndexOf('/');
                                 if (end > start)
-                                {
                                     currentIndividual.LastName = data.Substring(start, end - start).Trim();
-                                }
                             }
                             if (string.IsNullOrEmpty(currentIndividual.LastName))
-                            {
                                 currentIndividual.LastName = "Unknown";
-                            }
                         }
                         else if (tag == "SEX") currentIndividual.Gender = data;
                         else if (tag == "BIRT") currentSection = "INDI_BIRT";
@@ -102,9 +124,11 @@ namespace GenealogyDiffUtility
                     }
                     else if (currentSection == "INDI_BIRT" && currentIndividual != null)
                     {
-                        if (level == "1") // Popped back up out of birth context
+                        if (level == "1")
                         {
-                            currentSection = "INDI"; // Re-evaluate tag under parent context
+                            currentSection = "INDI";
+                            // Re-process line if it stepped out of BIRT back into INDI
+                            if (tag == "DEAT") currentSection = "INDI_DEAT";
                         }
                         else if (tag == "DATE") currentIndividual.BirthDate = data;
                         else if (tag == "PLAC") currentIndividual.BirthPlace = data;
