@@ -45,25 +45,66 @@
 
     <!-- Main area split in two for the diff view -->
     <Grid Grid.Row="1" ColumnDefinitions="*,*">
+
+      <!-- Left side -->
       <Border Padding="8"
               BorderBrush="#22000000"
               BorderThickness="0,0,1,0">
-        <ScrollViewer>
-          <TextBlock x:Name="LeftContentTextBlock"
-                     Text="Left file contents will appear here..."
-                     TextWrapping="Wrap" />
-        </ScrollViewer>
+        <TabControl>
+          <TabItem Header="Tree">
+            <TreeView x:Name="LeftTreeView">
+              <TreeViewItem Header="Header" />
+              <TreeViewItem Header="Individual" />
+              <TreeViewItem Header="Family" />
+              <TreeViewItem Header="Source" />
+              <TreeViewItem Header="Repository" />
+            </TreeView>
+          </TabItem>
+          <TabItem Header="Text">
+            <ScrollViewer>
+              <TextBlock x:Name="LeftContentTextBlock"
+                         Text="Left file contents will appear here..."
+                         TextWrapping="Wrap" />
+            </ScrollViewer>
+          </TabItem>
+          <TabItem Header="Diff">
+            <TextBlock x:Name="LeftDiffTextBlock"
+                       Text="Diff view coming soon..."
+                       TextWrapping="Wrap" />
+          </TabItem>
+        </TabControl>
       </Border>
+
+      <!-- Right side -->
       <Border Grid.Column="1"
               Padding="8"
               BorderBrush="#22000000"
               BorderThickness="1,0,0,0">
-        <ScrollViewer>
-          <TextBlock x:Name="RightContentTextBlock"
-                     Text="Right file contents will appear here..."
-                     TextWrapping="Wrap" />
-        </ScrollViewer>
+        <TabControl>
+          <TabItem Header="Tree">
+            <TreeView x:Name="RightTreeView">
+              <TreeViewItem Header="Header" />
+              <TreeViewItem Header="Individual" />
+              <TreeViewItem Header="Family" />
+              <TreeViewItem Header="Source" />
+              <TreeViewItem Header="Repository" />
+            </TreeView>
+          </TabItem>
+          <TabItem Header="Text">
+            <ScrollViewer>
+              <TextBlock x:Name="RightContentTextBlock"
+                         Text="Right file contents will appear here..."
+                         TextWrapping="Wrap" />
+            </ScrollViewer>
+          </TabItem>
+          <TabItem Header="Diff">
+            <TextBlock x:Name="RightDiffTextBlock"
+                       Text="Diff view coming soon..."
+                       TextWrapping="Wrap" />
+          </TabItem>
+        </TabControl>
       </Border>
+
     </Grid>
 
   </Grid>
