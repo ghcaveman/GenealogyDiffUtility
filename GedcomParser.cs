@@ -193,9 +193,31 @@ namespace GenealogyDiffUtility
                         if (tag == "HUSB") currentFamily.HusbandId = data;
                         else if (tag == "WIFE") currentFamily.WifeId = data;
                         else if (tag == "CHIL") currentFamily.ChildrenIds.Add(data);
+                        else if (tag == "MARR") currentSection = "FAM_MARR";
                         else if (tag == "NOTE")
                         {
                             AddNoteAssociation(currentFamily.NoteIds, data);
+                        }
+                    }
+                    else if (currentSection == "FAM_MARR" && currentFamily != null)
+                    {
+                        if (level == "2")
+                        {
+                            if (tag == "DATE") currentFamily.MarriageDate = data;
+                            else if (tag == "PLAC") currentFamily.MarriagePlace = data;
+                        }
+                        else if (level == "1")
+                        {
+                            // Stepped out of MARR back into FAM — process the FAM-level tags on this line
+                            currentSection = "FAM";
+                            if (tag == "HUSB") currentFamily.HusbandId = data;
+                            else if (tag == "WIFE") currentFamily.WifeId = data;
+                            else if (tag == "CHIL") currentFamily.ChildrenIds.Add(data);
+                            else if (tag == "MARR") currentSection = "FAM_MARR";
+                            else if (tag == "NOTE")
+                            {
+                                AddNoteAssociation(currentFamily.NoteIds, data);
+                            }
                         }
                     }
                     else if (currentSection == "SOUR" && currentSource != null)

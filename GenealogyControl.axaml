@@ -48,7 +48,7 @@
                         </DataTemplate>
 
                         <DataTemplate DataType="vm:FamilyNode">
-                            <TextBlock Text="{Binding Id, StringFormat='Family ID: {0}'}" Margin="5,0,0,0"/>
+                            <TextBlock Text="{Binding DisplayName}" Margin="5,0,0,0"/>
                         </DataTemplate>
 
                         <DataTemplate DataType="vm:SourceNode">

@@ -213,30 +213,35 @@ namespace GenealogyDiffUtility
         private static bool FamilyEqual(FamilyNode a, FamilyNode? b)
         {
             if (b == null) return false;
-            return a.HusbandId == b.HusbandId &&
-                   a.WifeId == b.WifeId &&
-                   StringSetEqual(a.ChildrenIds, b.ChildrenIds) &&
-                   a.MarriageDate == b.MarriageDate &&
+            // Husband/wife identity is already matched by the stable family key
+            // (built from their person keys), so here we only compare the
+            // remaining family-specific data.
+            return a.MarriageDate == b.MarriageDate &&
                    a.MarriagePlace == b.MarriagePlace &&
-                   StringSetEqual(a.NoteIds, b.NoteIds);
+                   a.ChildrenIds.Count == b.ChildrenIds.Count &&
+                   a.NoteIds.Count == b.NoteIds.Count;
         }
 
         private static bool SourceEqual(SourceNode a, SourceNode? b)
         {
             if (b == null) return false;
+            // Source identity is already matched by the stable source key
+            // (built from title, author, and publication info), so here we only
+            // compare the remaining source-specific data.
             return a.Title == b.Title &&
                    a.Author == b.Author &&
                    a.PublicationInfo == b.PublicationInfo &&
-                   a.RepositoryId == b.RepositoryId &&
-                   StringSetEqual(a.NoteIds, b.NoteIds);
+                   a.NoteIds.Count == b.NoteIds.Count;
         }
 
         private static bool RepositoryEqual(RepositoryNode a, RepositoryNode? b)
         {
             if (b == null) return false;
+            // Repository identity is already matched by the stable repository key
+            // (built from name and address), so here we only compare remaining data.
             return a.Name == b.Name &&
                    a.Address == b.Address &&
-                   StringSetEqual(a.NoteIds, b.NoteIds);
+                   a.NoteIds.Count == b.NoteIds.Count;
         }
 
         private static bool NoteEqual(NoteNode a, NoteNode? b)

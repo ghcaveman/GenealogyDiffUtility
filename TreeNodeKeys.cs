@@ -17,10 +17,10 @@ namespace GenealogyDiffUtility
                 TreeGroupNode g => g.Key,
                 SurnameGroupNode s => "Surname:" + s.Surname,
                 IndividualNode i => "Individual:" + BuildPersonKey(i),
-                FamilyNode f => "Family:" + f.Id,
-                SourceNode s => "Source:" + s.Id,
-                RepositoryNode r => "Repository:" + r.Id,
-                NoteNode n => "Note:" + n.Id,
+                FamilyNode f => "Family:" + BuildFamilyKey(f),
+                SourceNode s => "Source:" + BuildSourceKey(s),
+                RepositoryNode r => "Repository:" + BuildRepositoryKey(r),
+                NoteNode n => "Note:" + BuildNoteKey(n),
                 GedcomHeader => "Header",
                 _ => null
             };
@@ -51,6 +51,56 @@ namespace GenealogyDiffUtility
             // people share the name, the LoadTree pass assigns a "#2", "#3", ... suffix.
             int collision = person.CollisionIndex;
             return collision > 1 ? $"{name}#{collision}" : name;
+        }
+
+        /// <summary>
+        /// Builds a stable identity key for a family that is independent of the
+        /// GEDCOM file's record numbering. The key is derived from the resolved
+        /// husband and wife identities (which themselves use stable person keys)
+        /// plus the marriage date, so that the same couple in two different
+        /// exports produces the same family key.
+        /// </summary>
+        private static string BuildFamilyKey(FamilyNode family)
+        {
+            string husbandKey = family.Husband != null ? BuildPersonKey(family.Husband) : string.Empty;
+            string wifeKey = family.Wife != null ? BuildPersonKey(family.Wife) : string.Empty;
+
+            // If neither spouse could be resolved, fall back to the GEDCOM record Id
+            if (string.IsNullOrEmpty(husbandKey) && string.IsNullOrEmpty(wifeKey))
+            {
+                return family.Id;
+            }
+
+            string marriageKey = NormalizeForKey(family.MarriageDate);
+            return $"{husbandKey}|{wifeKey}|{marriageKey}";
+        }
+
+        /// <summary>
+        /// Builds a stable identity key for a source based on its descriptive
+        /// content (title, author, publication info) rather than the GEDCOM
+        /// record Id, which can differ between exports.
+        /// </summary>
+        private static string BuildSourceKey(SourceNode source)
+        {
+            return $"{NormalizeName(source.Title)}|{NormalizeName(source.Author)}|{NormalizeName(source.PublicationInfo)}";
+        }
+
+        /// <summary>
+        /// Builds a stable identity key for a repository based on its name and
+        /// address rather than the GEDCOM record Id, which can differ between exports.
+        /// </summary>
+        private static string BuildRepositoryKey(RepositoryNode repository)
+        {
+            return $"{NormalizeName(repository.Name)}|{NormalizeName(repository.Address)}";
+        }
+
+        /// <summary>
+        /// Builds a stable identity key for a note based on its text content
+        /// rather than the GEDCOM record Id, which can differ between exports.
+        /// </summary>
+        private static string BuildNoteKey(NoteNode note)
+        {
+            return NormalizeName(note.Text);
         }
 
         /// <summary>

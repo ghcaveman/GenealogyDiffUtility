@@ -69,7 +69,7 @@ namespace GenealogyDiffUtility
         /// Converts a GEDCOM date string (e.g., "24 AUG 1938", "1994", "ABT 1974")
         /// to mm/dd/yyyy format. Returns the original string if it cannot be parsed.
         /// </summary>
-        private static string FormatDate(string gedcomDate)
+        internal static string FormatDate(string gedcomDate)
         {
             if (string.IsNullOrWhiteSpace(gedcomDate)) return string.Empty;
 

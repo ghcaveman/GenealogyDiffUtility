@@ -99,11 +99,20 @@ namespace GenealogyDiffUtility
             }
 
             // 3. Families Node
+            // Resolve husband/wife references so the family can display meaningful names
+            foreach (var f in _context.Families.Values)
+            {
+                if (!string.IsNullOrEmpty(f.HusbandId) && _context.Individuals.TryGetValue(f.HusbandId, out var husband))
+                    f.Husband = husband;
+                if (!string.IsNullOrEmpty(f.WifeId) && _context.Individuals.TryGetValue(f.WifeId, out var wife))
+                    f.Wife = wife;
+            }
+
             var familiesNode = new TreeGroupNode
             {
                 Key = "Families",
                 Name = $"Families ({_context.Families.Count})",
-                Children = _context.Families.Values.Cast<object>().ToList()
+                Children = _context.Families.Values.OrderBy(f => f.DisplayName).Cast<object>().ToList()
             };
             TreeNodes.Add(familiesNode);
             RegisterNode(familiesNode);
@@ -117,7 +126,11 @@ namespace GenealogyDiffUtility
             {
                 Key = "Sources",
                 Name = $"Sources ({_context.Sources.Count})",
-                Children = _context.Sources.Values.Cast<object>().ToList()
+                Children = _context.Sources.Values
+                    .OrderBy(s => s.Title)
+                    .ThenBy(s => s.Id)
+                    .Cast<object>()
+                    .ToList()
             };
             TreeNodes.Add(sourcesNode);
             RegisterNode(sourcesNode);
@@ -131,7 +144,11 @@ namespace GenealogyDiffUtility
             {
                 Key = "Repositories",
                 Name = $"Repositories ({_context.Repositories.Count})",
-                Children = _context.Repositories.Values.Cast<object>().ToList()
+                Children = _context.Repositories.Values
+                    .OrderBy(r => r.Name)
+                    .ThenBy(r => r.Id)
+                    .Cast<object>()
+                    .ToList()
             };
             TreeNodes.Add(repositoriesNode);
             RegisterNode(repositoriesNode);
@@ -145,7 +162,11 @@ namespace GenealogyDiffUtility
             {
                 Key = "Notes",
                 Name = $"Notes ({_context.Notes.Count})",
-                Children = _context.Notes.Values.Cast<object>().ToList()
+                Children = _context.Notes.Values
+                    .OrderBy(n => n.DisplayName)
+                    .ThenBy(n => n.Id)
+                    .Cast<object>()
+                    .ToList()
             };
             TreeNodes.Add(notesNode);
             RegisterNode(notesNode);
