@@ -41,6 +41,12 @@ namespace GenealogyDiffUtility
         public string GedcomVersion => _context.Header.GedcomVersion;
         public string CharacterEncoding => _context.Header.CharacterEncoding;
 
+        /// <summary>
+        /// The parsed GEDCOM tree context, used by the edit dialog to look up
+        /// spouses and children associated with an individual.
+        /// </summary>
+        public GedcomTreeContext Context => _context;
+
         // The unified hierarchical collection your TreeView control will bind onto
         public ObservableCollection<TreeGroupNode> TreeNodes { get; } = new();
 

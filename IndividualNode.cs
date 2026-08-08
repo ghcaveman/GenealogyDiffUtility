@@ -116,5 +116,14 @@ namespace GenealogyDiffUtility
             // Return the original string if we can't parse it
             return gedcomDate.Trim();
         }
+
+        /// <summary>
+        /// Notifies listeners that the display name has changed, typically after
+        /// the individual's vital record data has been edited via the edit dialog.
+        /// </summary>
+        public void RefreshDisplay()
+        {
+            OnPropertyChanged(nameof(DisplayName));
+        }
     }
 }

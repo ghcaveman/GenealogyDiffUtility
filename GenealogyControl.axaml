@@ -44,7 +44,7 @@
                         </TreeDataTemplate>
 
                         <DataTemplate DataType="vm:IndividualNode">
-                            <TextBlock Text="{Binding DisplayName}" Margin="5,0,0,0"/>
+                            <TextBlock Text="{Binding DisplayName}" Margin="5,0,0,0" DoubleTapped="OnIndividualDoubleTapped" ToolTip.Tip="Double-click to edit individual data"/>
                         </DataTemplate>
 
                         <DataTemplate DataType="vm:FamilyNode">

@@ -144,5 +144,27 @@ namespace GenealogyDiffUtility
                 }
             }
         }
+
+        /// <summary>
+        /// Opens the individual edit dialog when the user double-clicks an
+        /// individual node in the TreeView.
+        /// </summary>
+        private async void OnIndividualDoubleTapped(object? sender, RoutedEventArgs e)
+        {
+            if (sender is not TextBlock textBlock) return;
+            if (textBlock.DataContext is not IndividualNode individual) return;
+            if (_currentViewModel == null) return;
+
+            var parentWindow = TopLevel.GetTopLevel(this) as Window;
+            if (parentWindow == null) return;
+
+            var editVm = new IndividualEditViewModel(individual, _currentViewModel.Context);
+            var dialog = new IndividualEditDialog
+            {
+                DataContext = editVm
+            };
+
+            await dialog.ShowDialog(parentWindow);
+        }
     }
 }
