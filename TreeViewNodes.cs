@@ -17,4 +17,15 @@ namespace GenealogyDiffUtility
         public string DisplayName => $"{Surname} ({People.Count})";
         public List<IndividualNode> People { get; set; } = new();
     }
+
+    /// <summary>
+    /// A lightweight display leaf shown beneath an <see cref="IndividualNode"/> when
+    /// the "Details" view is active. It surfaces the spouses, children, and notes
+    /// associated with a person without participating in cross-tree sync.
+    /// </summary>
+    internal class IndividualDetailNode : TreeNodeBase
+    {
+        public string Role { get; set; } = string.Empty;   // "Spouse", "Child", "Note"
+        public string DisplayName { get; set; } = string.Empty;
+    }
 }

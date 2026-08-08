@@ -46,6 +46,24 @@ namespace GenealogyDiffUtility
         /// </summary>
         public GedcomTreeContext Context => _context;
 
+        private bool _showDetails;
+        /// <summary>
+        /// When true, each individual in the tree shows sub-nodes for their
+        /// spouses, children, and notes. Toggling this rebuilds those detail
+        /// sub-nodes in place without reloading the whole tree.
+        /// </summary>
+        public bool ShowDetails
+        {
+            get => _showDetails;
+            set
+            {
+                if (RaiseAndSetIfChanged(ref _showDetails, value))
+                {
+                    RefreshDetails();
+                }
+            }
+        }
+
         // The unified hierarchical collection your TreeView control will bind onto
         public ObservableCollection<TreeGroupNode> TreeNodes { get; } = new();
 
@@ -177,6 +195,80 @@ namespace GenealogyDiffUtility
             foreach (var n in _context.Notes.Values)
             {
                 RegisterNode(n);
+            }
+
+            // Populate or clear per-individual detail sub-nodes based on the current
+            // ShowDetails setting (families are resolved above, so spouse/child data is ready).
+            RefreshDetails();
+        }
+
+        /// <summary>
+        /// Rebuilds the per-individual detail sub-nodes (spouses, children, notes)
+        /// when <see cref="ShowDetails"/> changes or a new tree is loaded. Detail
+        /// nodes are lightweight display-only leaves (no stable key) so they do not
+        /// participate in cross-tree sync or mismatch navigation.
+        /// </summary>
+        private void RefreshDetails()
+        {
+            if (_context?.Individuals == null) return;
+
+            foreach (var person in _context.Individuals.Values)
+            {
+                person.Details.Clear();
+                if (_showDetails)
+                {
+                    BuildDetails(person);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Resolves the spouses, children, and notes for a single individual and
+        /// appends them as detail sub-nodes.
+        /// </summary>
+        private void BuildDetails(IndividualNode person)
+        {
+            // Spouses and children from the families in which this person is a spouse
+            foreach (var family in _context.Families.Values)
+            {
+                bool isHusband = family.HusbandId == person.Id;
+                bool isWife = family.WifeId == person.Id;
+                if (!isHusband && !isWife) continue;
+
+                var spouse = isHusband ? family.Wife : family.Husband;
+                if (spouse != null)
+                {
+                    person.Details.Add(new IndividualDetailNode
+                    {
+                        Role = "Spouse",
+                        DisplayName = $"Spouse: {spouse.DisplayName}"
+                    });
+                }
+
+                foreach (var childId in family.ChildrenIds)
+                {
+                    if (_context.Individuals.TryGetValue(childId, out var child))
+                    {
+                        person.Details.Add(new IndividualDetailNode
+                        {
+                            Role = "Child",
+                            DisplayName = $"Child: {child.DisplayName}"
+                        });
+                    }
+                }
+            }
+
+            // Notes attached directly to this person
+            foreach (var noteId in person.NoteIds)
+            {
+                if (_context.Notes.TryGetValue(noteId, out var note))
+                {
+                    person.Details.Add(new IndividualDetailNode
+                    {
+                        Role = "Note",
+                        DisplayName = $"Note: {note.DisplayName}"
+                    });
+                }
             }
         }
 

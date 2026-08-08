@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Globalization;
 
 namespace GenealogyDiffUtility
@@ -32,6 +33,13 @@ namespace GenealogyDiffUtility
 
         // Pointers to notes attached to this person or their events
         public List<string> NoteIds { get; set; } = new();
+
+        /// <summary>
+        /// Display-only sub-nodes (spouses, children, notes) that appear beneath this
+        /// individual when the Detail view (the "Details" checkbox) is enabled. These
+        /// nodes are lightweight wrappers and do not participate in cross-tree sync.
+        /// </summary>
+        public ObservableCollection<IndividualDetailNode> Details { get; } = new();
 
         /// <summary>
         /// Displays the name in "LastName, FirstName (b. mm/dd/yyyy d. mm/dd/yyyy)" format.

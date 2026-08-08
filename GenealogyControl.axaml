@@ -21,6 +21,7 @@
             <TextBlock Text="{Binding GedcomVersion}"/>
             <Button Content="▲" Click="OnNavigateUpClick" Margin="15,0,0,0" Padding="6,2" ToolTip.Tip="Previous mismatch" x:Name="UpButton"/>
             <Button Content="▼" Click="OnNavigateDownClick" Padding="6,2" ToolTip.Tip="Next mismatch" x:Name="DownButton"/>
+            <CheckBox Content="Details" IsChecked="{Binding ShowDetails, Mode=TwoWay}" VerticalAlignment="Center" Margin="15,0,0,0" ToolTip.Tip="Show spouses, children, and notes beneath each individual"/>
         </StackPanel>
         
         <TabControl Grid.Row="2">
@@ -41,8 +42,12 @@
                             <TextBlock Text="{Binding DisplayName}" Foreground="DarkSlateGray"/>
                         </TreeDataTemplate>
 
-                        <DataTemplate DataType="vm:IndividualNode">
+                        <TreeDataTemplate DataType="vm:IndividualNode" ItemsSource="{Binding Details}">
                             <TextBlock Text="{Binding DisplayName}" Margin="5,0,0,0" DoubleTapped="OnIndividualDoubleTapped" ToolTip.Tip="Double-click to edit individual data"/>
+                        </TreeDataTemplate>
+
+                        <DataTemplate DataType="vm:IndividualDetailNode">
+                            <TextBlock Text="{Binding DisplayName}" Margin="15,0,0,0" FontStyle="Italic" Foreground="DimGray" TextWrapping="Wrap"/>
                         </DataTemplate>
 
                         <DataTemplate DataType="vm:FamilyNode">
