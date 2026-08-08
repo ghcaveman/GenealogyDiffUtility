@@ -16,6 +16,9 @@ namespace GenealogyDiffUtility
         // Pointers to notes attached to this family
         public List<string> NoteIds { get; set; } = new();
 
+        // Pointers to sources that prove this family exists
+        public List<string> SourceIds { get; set; } = new();
+
         // Resolved references to the parent individuals (set by DiffTreeViewModel.LoadTree)
         public IndividualNode? Husband { get; set; }
         public IndividualNode? Wife { get; set; }

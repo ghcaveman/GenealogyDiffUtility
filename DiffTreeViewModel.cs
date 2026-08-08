@@ -203,10 +203,10 @@ namespace GenealogyDiffUtility
         }
 
         /// <summary>
-        /// Rebuilds the per-individual and per-note detail sub-nodes when
-        /// <see cref="ShowDetails"/> changes or a new tree is loaded. Detail
-        /// nodes are lightweight display-only leaves (no stable key) so they do not
-        /// participate in cross-tree sync or mismatch navigation.
+        /// Rebuilds the per-individual, per-note, per-repository, and per-source
+        /// detail sub-nodes when <see cref="ShowDetails"/> changes or a new tree is
+        /// loaded. Detail nodes are lightweight display-only leaves (no stable key)
+        /// so they do not participate in cross-tree sync or mismatch navigation.
         /// </summary>
         private void RefreshDetails()
         {
@@ -236,6 +236,15 @@ namespace GenealogyDiffUtility
                 if (_showDetails)
                 {
                     BuildRepositoryDetails(repo);
+                }
+            }
+
+            foreach (var source in _context.Sources.Values)
+            {
+                source.Details.Clear();
+                if (_showDetails)
+                {
+                    BuildSourceDetails(source);
                 }
             }
         }
@@ -327,6 +336,44 @@ namespace GenealogyDiffUtility
                     {
                         Role = "Source",
                         DisplayName = $"Source: {source.Title}"
+                    });
+                }
+            }
+        }
+
+        /// <summary>
+        /// Resolves the individuals and families that reference this source and
+        /// appends them as detail sub-nodes, providing a reverse-lookup of which
+        /// records are proven by this source.
+        /// </summary>
+        private void BuildSourceDetails(SourceNode source)
+        {
+            // Individuals that reference this source
+            foreach (var person in _context.Individuals.Values
+                .OrderBy(p => p.DisplayName)
+                .ThenBy(p => p.Id))
+            {
+                if (person.SourceIds.Contains(source.Id))
+                {
+                    source.Details.Add(new SourceDetailNode
+                    {
+                        Role = "Individual",
+                        DisplayName = $"Individual: {person.DisplayName}"
+                    });
+                }
+            }
+
+            // Families that reference this source
+            foreach (var family in _context.Families.Values
+                .OrderBy(f => f.DisplayName)
+                .ThenBy(f => f.Id))
+            {
+                if (family.SourceIds.Contains(source.Id))
+                {
+                    source.Details.Add(new SourceDetailNode
+                    {
+                        Role = "Family",
+                        DisplayName = $"Family: {family.DisplayName}"
                     });
                 }
             }

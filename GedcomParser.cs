@@ -153,6 +153,7 @@ namespace GenealogyDiffUtility
                         else if (tag == "SEX") currentIndividual.Gender = data;
                         else if (tag == "BIRT") currentSection = "INDI_BIRT";
                         else if (tag == "DEAT") currentSection = "INDI_DEAT";
+                        else if (tag == "SOUR") AddSourceAssociation(currentIndividual.SourceIds, data);
                         else if (tag == "NOTE")
                         {
                             AddNoteAssociation(currentIndividual.NoteIds, data);
@@ -168,6 +169,7 @@ namespace GenealogyDiffUtility
                         }
                         else if (tag == "DATE") currentIndividual.BirthDate = data;
                         else if (tag == "PLAC") currentIndividual.BirthPlace = data;
+                        else if (tag == "SOUR") AddSourceAssociation(currentIndividual.SourceIds, data);
                         else if (tag == "NOTE")
                         {
                             AddNoteAssociation(currentIndividual.NoteIds, data);
@@ -183,6 +185,8 @@ namespace GenealogyDiffUtility
                         }
                         else if (tag == "DATE") currentIndividual.DeathDate = data;
                         else if (tag == "PLAC") currentIndividual.DeathPlace = data;
+                        else if (tag == "SOUR") AddSourceAssociation(currentIndividual.SourceIds, data);
+                        else if (tag == "SOUR") AddSourceAssociation(currentIndividual.SourceIds, data);
                         else if (tag == "NOTE")
                         {
                             AddNoteAssociation(currentIndividual.NoteIds, data);
@@ -194,6 +198,7 @@ namespace GenealogyDiffUtility
                         else if (tag == "WIFE") currentFamily.WifeId = data;
                         else if (tag == "CHIL") currentFamily.ChildrenIds.Add(data);
                         else if (tag == "MARR") currentSection = "FAM_MARR";
+                        else if (tag == "SOUR") AddSourceAssociation(currentFamily.SourceIds, data);
                         else if (tag == "NOTE")
                         {
                             AddNoteAssociation(currentFamily.NoteIds, data);
@@ -293,6 +298,16 @@ namespace GenealogyDiffUtility
             if (string.IsNullOrWhiteSpace(data)) return;
             if (data.StartsWith("@") && data.EndsWith("@"))
                 noteIds.Add(data);
+        }
+
+        /// <summary>
+        /// Adds a source cross-reference ID (e.g., "@S1@") to an association list.
+        /// </summary>
+        private static void AddSourceAssociation(List<string> sourceIds, string data)
+        {
+            if (string.IsNullOrWhiteSpace(data)) return;
+            if (data.StartsWith("@") && data.EndsWith("@"))
+                sourceIds.Add(data);
         }
     }
 }
