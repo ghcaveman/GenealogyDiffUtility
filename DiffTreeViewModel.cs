@@ -203,8 +203,8 @@ namespace GenealogyDiffUtility
         }
 
         /// <summary>
-        /// Rebuilds the per-individual detail sub-nodes (spouses, children, notes)
-        /// when <see cref="ShowDetails"/> changes or a new tree is loaded. Detail
+        /// Rebuilds the per-individual and per-note detail sub-nodes when
+        /// <see cref="ShowDetails"/> changes or a new tree is loaded. Detail
         /// nodes are lightweight display-only leaves (no stable key) so they do not
         /// participate in cross-tree sync or mismatch navigation.
         /// </summary>
@@ -218,6 +218,83 @@ namespace GenealogyDiffUtility
                 if (_showDetails)
                 {
                     BuildDetails(person);
+                }
+            }
+
+            foreach (var note in _context.Notes.Values)
+            {
+                note.Details.Clear();
+                if (_showDetails)
+                {
+                    BuildNoteDetails(note);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Resolves the records (Individual, Family, Source, Repository) that
+        /// reference this note and appends them as detail sub-nodes, providing
+        /// a reverse-lookup of which records a note is associated with.
+        /// </summary>
+        private void BuildNoteDetails(NoteNode note)
+        {
+            // Individuals that reference this note
+            foreach (var person in _context.Individuals.Values
+                .OrderBy(p => p.DisplayName)
+                .ThenBy(p => p.Id))
+            {
+                if (person.NoteIds.Contains(note.Id))
+                {
+                    note.Details.Add(new NoteDetailNode
+                    {
+                        Role = "Individual",
+                        DisplayName = $"Individual: {person.DisplayName}"
+                    });
+                }
+            }
+
+            // Families that reference this note
+            foreach (var family in _context.Families.Values
+                .OrderBy(f => f.DisplayName)
+                .ThenBy(f => f.Id))
+            {
+                if (family.NoteIds.Contains(note.Id))
+                {
+                    note.Details.Add(new NoteDetailNode
+                    {
+                        Role = "Family",
+                        DisplayName = $"Family: {family.DisplayName}"
+                    });
+                }
+            }
+
+            // Sources that reference this note
+            foreach (var source in _context.Sources.Values
+                .OrderBy(s => s.Title)
+                .ThenBy(s => s.Id))
+            {
+                if (source.NoteIds.Contains(note.Id))
+                {
+                    note.Details.Add(new NoteDetailNode
+                    {
+                        Role = "Source",
+                        DisplayName = $"Source: {source.Title}"
+                    });
+                }
+            }
+
+            // Repositories that reference this note
+            foreach (var repo in _context.Repositories.Values
+                .OrderBy(r => r.Name)
+                .ThenBy(r => r.Id))
+            {
+                if (repo.NoteIds.Contains(note.Id))
+                {
+                    note.Details.Add(new NoteDetailNode
+                    {
+                        Role = "Repository",
+                        DisplayName = $"Repository: {repo.Name}"
+                    });
                 }
             }
         }

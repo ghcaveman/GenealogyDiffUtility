@@ -28,4 +28,16 @@ namespace GenealogyDiffUtility
         public string Role { get; set; } = string.Empty;   // "Spouse", "Child", "Note"
         public string DisplayName { get; set; } = string.Empty;
     }
+
+    /// <summary>
+    /// A lightweight display leaf shown beneath a <see cref="NoteNode"/> when
+    /// the "Details" view is active. It surfaces the records (Individual, Family,
+    /// Source, Repository, etc.) that reference the note, without participating
+    /// in cross-tree sync.
+    /// </summary>
+    internal class NoteDetailNode : TreeNodeBase
+    {
+        public string Role { get; set; } = string.Empty;   // "Individual", "Family", "Source", "Repository"
+        public string DisplayName { get; set; } = string.Empty;
+    }
 }
