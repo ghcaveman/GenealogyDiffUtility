@@ -229,6 +229,15 @@ namespace GenealogyDiffUtility
                     BuildNoteDetails(note);
                 }
             }
+
+            foreach (var repo in _context.Repositories.Values)
+            {
+                repo.Details.Clear();
+                if (_showDetails)
+                {
+                    BuildRepositoryDetails(repo);
+                }
+            }
         }
 
         /// <summary>
@@ -294,6 +303,30 @@ namespace GenealogyDiffUtility
                     {
                         Role = "Repository",
                         DisplayName = $"Repository: {repo.Name}"
+                    });
+                }
+            }
+        }
+
+        /// <summary>
+        /// Resolves the sources that reference this repository (via their REPO
+        /// cross-reference) and appends them as detail sub-nodes, providing a
+        /// reverse-lookup of which sources are held by this repository.
+        /// </summary>
+        private void BuildRepositoryDetails(RepositoryNode repo)
+        {
+            // Sources that reference this repository
+            foreach (var source in _context.Sources.Values
+                .OrderBy(s => s.Title)
+                .ThenBy(s => s.Id))
+            {
+                if (!string.IsNullOrEmpty(source.RepositoryId) &&
+                    source.RepositoryId == repo.Id)
+                {
+                    repo.Details.Add(new RepositoryDetailNode
+                    {
+                        Role = "Source",
+                        DisplayName = $"Source: {source.Title}"
                     });
                 }
             }

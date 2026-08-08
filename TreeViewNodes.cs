@@ -40,4 +40,15 @@ namespace GenealogyDiffUtility
         public string Role { get; set; } = string.Empty;   // "Individual", "Family", "Source", "Repository"
         public string DisplayName { get; set; } = string.Empty;
     }
+
+    /// <summary>
+    /// A lightweight display leaf shown beneath a <see cref="RepositoryNode"/> when
+    /// the "Details" view is active. It surfaces the records (Source, etc.) that
+    /// reference the repository, without participating in cross-tree sync.
+    /// </summary>
+    internal class RepositoryDetailNode : TreeNodeBase
+    {
+        public string Role { get; set; } = string.Empty;   // "Source"
+        public string DisplayName { get; set; } = string.Empty;
+    }
 }

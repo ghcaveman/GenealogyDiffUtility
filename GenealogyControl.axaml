@@ -58,8 +58,12 @@
                             <TextBlock Text="{Binding Title}" Margin="5,0,0,0"/>
                         </DataTemplate>
 
-                        <DataTemplate DataType="vm:RepositoryNode">
+                        <TreeDataTemplate DataType="vm:RepositoryNode" ItemsSource="{Binding Details}">
                             <TextBlock Text="{Binding Name}" Margin="5,0,0,0"/>
+                        </TreeDataTemplate>
+
+                        <DataTemplate DataType="vm:RepositoryDetailNode">
+                            <TextBlock Text="{Binding DisplayName}" Margin="15,0,0,0" FontStyle="Italic" Foreground="DimGray" TextWrapping="Wrap"/>
                         </DataTemplate>
 
                         <TreeDataTemplate DataType="vm:NoteNode" ItemsSource="{Binding Details}">

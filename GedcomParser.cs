@@ -224,6 +224,7 @@ namespace GenealogyDiffUtility
                     {
                         if (tag == "TITL") currentSource.Title = data;
                         else if (tag == "AUTH") currentSource.Author = data;
+                        else if (tag == "REPO") currentSource.RepositoryId = data;
                         else if (tag == "NOTE")
                         {
                             AddNoteAssociation(currentSource.NoteIds, data);
