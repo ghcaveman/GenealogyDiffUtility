@@ -39,7 +39,6 @@ namespace GenealogyDiffUtility
 
         public string SourceSoftware => _context.Header.SourceSoftware;
         public string GedcomVersion => _context.Header.GedcomVersion;
-        public string CharacterEncoding => _context.Header.CharacterEncoding;
 
         /// <summary>
         /// The parsed GEDCOM tree context, used by the edit dialog to look up
@@ -58,7 +57,6 @@ namespace GenealogyDiffUtility
 
             OnPropertyChanged(nameof(SourceSoftware));
             OnPropertyChanged(nameof(GedcomVersion));
-            OnPropertyChanged(nameof(CharacterEncoding));
 
             UnsubscribeAllNodes();
             TreeNodes.Clear();
