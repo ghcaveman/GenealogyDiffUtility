@@ -19,6 +19,10 @@
 
             // Connect the mismatch navigator for jumping between differences
             _mismatchNavigator.Attach(LeftTree, RightTree);
+
+            // Cross-link the trees so the Diff tab can compare them
+            LeftTree.OtherTree = RightTree;
+            RightTree.OtherTree = LeftTree;
         }
 
         /// <summary>

@@ -108,7 +108,7 @@
             </TabItem>
 
             <TabItem Header="Diff">
-                <TextBlock Text="Diff View - Unimplemented" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="Gray"/>
+                <TextBox Text="{Binding DiffText}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap" FontFamily="Courier New"/>
             </TabItem>
         </TabControl>
     </Grid>
