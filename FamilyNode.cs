@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 
 namespace GenealogyDiffUtility
 {
@@ -22,6 +23,13 @@ namespace GenealogyDiffUtility
         // Resolved references to the parent individuals (set by DiffTreeViewModel.LoadTree)
         public IndividualNode? Husband { get; set; }
         public IndividualNode? Wife { get; set; }
+
+        /// <summary>
+        /// Display-only sub-nodes (spouses and children) that appear beneath this
+        /// family when the Detail view (the Details checkbox) is enabled. These
+        /// nodes are lightweight wrappers and do not participate in cross-tree sync.
+        /// </summary>
+        public ObservableCollection<FamilyDetailNode> Details { get; } = new();
 
         /// <summary>
         /// Displays the family as "LastName Father, FirstName Father, LastName Mother,

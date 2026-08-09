@@ -203,10 +203,11 @@ namespace GenealogyDiffUtility
         }
 
         /// <summary>
-        /// Rebuilds the per-individual, per-note, per-repository, and per-source
-        /// detail sub-nodes when <see cref="ShowDetails"/> changes or a new tree is
-        /// loaded. Detail nodes are lightweight display-only leaves (no stable key)
-        /// so they do not participate in cross-tree sync or mismatch navigation.
+        /// Rebuilds the per-individual, per-family, per-note, per-repository, and
+        /// per-source detail sub-nodes when <see cref="ShowDetails"/> changes or a
+        /// new tree is loaded. Detail nodes are lightweight display-only leaves
+        /// (no stable key) so they do not participate in cross-tree sync or
+        /// mismatch navigation.
         /// </summary>
         private void RefreshDetails()
         {
@@ -218,6 +219,15 @@ namespace GenealogyDiffUtility
                 if (_showDetails)
                 {
                     BuildDetails(person);
+                }
+            }
+
+            foreach (var family in _context.Families.Values)
+            {
+                family.Details.Clear();
+                if (_showDetails)
+                {
+                    BuildFamilyDetails(family);
                 }
             }
 
@@ -374,6 +384,48 @@ namespace GenealogyDiffUtility
                     {
                         Role = "Family",
                         DisplayName = $"Family: {family.DisplayName}"
+                    });
+                }
+            }
+        }
+
+        /// <summary>
+        /// Resolves the spouses and children for a single family and appends them
+        /// as detail sub-nodes. The husband and wife are shown as "Spouse" entries
+        /// (each labeled with their role in the family), and each child is shown
+        /// as a "Child" entry.
+        /// </summary>
+        private void BuildFamilyDetails(FamilyNode family)
+        {
+            // Husband (if resolved)
+            if (family.Husband != null)
+            {
+                family.Details.Add(new FamilyDetailNode
+                {
+                    Role = "Spouse",
+                    DisplayName = $"Husband: {family.Husband.DisplayName}"
+                });
+            }
+
+            // Wife (if resolved)
+            if (family.Wife != null)
+            {
+                family.Details.Add(new FamilyDetailNode
+                {
+                    Role = "Spouse",
+                    DisplayName = $"Wife: {family.Wife.DisplayName}"
+                });
+            }
+
+            // Children (resolved from their IDs)
+            foreach (var childId in family.ChildrenIds)
+            {
+                if (_context.Individuals.TryGetValue(childId, out var child))
+                {
+                    family.Details.Add(new FamilyDetailNode
+                    {
+                        Role = "Child",
+                        DisplayName = $"Child: {child.DisplayName}"
                     });
                 }
             }

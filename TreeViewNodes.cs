@@ -62,4 +62,15 @@ namespace GenealogyDiffUtility
         public string Role { get; set; } = string.Empty;   // "Individual", "Family"
         public string DisplayName { get; set; } = string.Empty;
     }
+
+    /// <summary>
+    /// A lightweight display leaf shown beneath a <see cref="FamilyNode"/> when
+    /// the "Details" view is active. It surfaces the spouses and children
+    /// associated with a family without participating in cross-tree sync.
+    /// </summary>
+    internal class FamilyDetailNode : TreeNodeBase
+    {
+        public string Role { get; set; } = string.Empty;   // "Spouse", "Child"
+        public string DisplayName { get; set; } = string.Empty;
+    }
 }
