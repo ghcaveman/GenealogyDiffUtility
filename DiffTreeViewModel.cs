@@ -356,7 +356,9 @@ namespace GenealogyDiffUtility
         /// Resolves the individuals and families that reference this source
         /// (either directly or via any of their events) and appends them as
         /// detail sub-nodes, providing a reverse-lookup of which records are
-        /// proven by this source.
+        /// proven by this source. When a source proves a specific event, the
+        /// event is shown alongside the record (e.g., "Individual: John Smith —
+        /// Birth").
         /// </summary>
         private void BuildSourceDetails(SourceNode source)
         {
@@ -365,15 +367,23 @@ namespace GenealogyDiffUtility
                 .OrderBy(p => p.DisplayName)
                 .ThenBy(p => p.Id))
             {
-                bool referencesSource = person.SourceIds.Contains(source.Id) ||
-                    person.Events.Any(e => e.SourceIds.Contains(source.Id));
-
-                if (referencesSource)
+                // Direct (record-level) citation
+                if (person.SourceIds.Contains(source.Id))
                 {
                     source.Details.Add(new SourceDetailNode
                     {
                         Role = "Individual",
                         DisplayName = $"Individual: {person.DisplayName}"
+                    });
+                }
+
+                // Event-level citations — one entry per event that cites this source
+                foreach (var evt in person.Events.Where(e => e.SourceIds.Contains(source.Id) && !e.IsInternal))
+                {
+                    source.Details.Add(new SourceDetailNode
+                    {
+                        Role = "Individual",
+                        DisplayName = $"Individual: {person.DisplayName} — {evt.DisplayName}"
                     });
                 }
             }
@@ -383,15 +393,23 @@ namespace GenealogyDiffUtility
                 .OrderBy(f => f.DisplayName)
                 .ThenBy(f => f.Id))
             {
-                bool referencesSource = family.SourceIds.Contains(source.Id) ||
-                    family.Events.Any(e => e.SourceIds.Contains(source.Id));
-
-                if (referencesSource)
+                // Direct (record-level) citation
+                if (family.SourceIds.Contains(source.Id))
                 {
                     source.Details.Add(new SourceDetailNode
                     {
                         Role = "Family",
                         DisplayName = $"Family: {family.DisplayName}"
+                    });
+                }
+
+                // Event-level citations — one entry per event that cites this source
+                foreach (var evt in family.Events.Where(e => e.SourceIds.Contains(source.Id) && !e.IsInternal))
+                {
+                    source.Details.Add(new SourceDetailNode
+                    {
+                        Role = "Family",
+                        DisplayName = $"Family: {family.DisplayName} — {evt.DisplayName}"
                     });
                 }
             }

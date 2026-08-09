@@ -207,6 +207,7 @@ namespace GenealogyDiffUtility
                    a.DeathDate == b.DeathDate &&
                    a.DeathPlace == b.DeathPlace &&
                    StringSetEqual(a.SourceIds, b.SourceIds) &&
+                   StringSetEqual(CollectEventSourceIds(a.Events), CollectEventSourceIds(b.Events)) &&
                    StringSetEqual(a.NoteIds, b.NoteIds);
         }
 
@@ -219,7 +220,40 @@ namespace GenealogyDiffUtility
             return a.MarriageDate == b.MarriageDate &&
                    a.MarriagePlace == b.MarriagePlace &&
                    a.ChildrenIds.Count == b.ChildrenIds.Count &&
+                   StringSetEqual(a.SourceIds, b.SourceIds) &&
+                   StringSetEqual(CollectEventSourceIds(a.Events), CollectEventSourceIds(b.Events)) &&
                    a.NoteIds.Count == b.NoteIds.Count;
+        }
+        private static bool StringSetEqual(List<string> a, List<string> b)
+        {
+            if (a.Count != b.Count) return false;
+            var setA = new HashSet<string>(a);
+            var setB = new HashSet<string>(b);
+            return setA.SetEquals(setB);
+        }
+        private static bool StringSetEqual(IEnumerable<string> a, IEnumerable<string> b)
+        {
+            var setA = new HashSet<string>(a);
+            var setB = new HashSet<string>(b);
+            return setA.SetEquals(setB);
+        }
+
+        /// <summary>
+        /// Collects the union of all source IDs cited by the given events.
+        /// Used to detect differences in which sources prove an individual's
+        /// or family's events (e.g., a birth, death, or marriage citation).
+        /// </summary>
+        private static HashSet<string> CollectEventSourceIds(IEnumerable<GedcomEvent> events)
+        {
+            var set = new HashSet<string>();
+            foreach (var evt in events)
+            {
+                foreach (var sid in evt.SourceIds)
+                {
+                    set.Add(sid);
+                }
+            }
+            return set;
         }
 
         private static bool SourceEqual(SourceNode a, SourceNode? b)
@@ -270,14 +304,6 @@ namespace GenealogyDiffUtility
         {
             if (b == null) return false;
             return a.Surname == b.Surname;
-        }
-
-        private static bool StringSetEqual(List<string> a, List<string> b)
-        {
-            if (a.Count != b.Count) return false;
-            var setA = new HashSet<string>(a);
-            var setB = new HashSet<string>(b);
-            return setA.SetEquals(setB);
         }
 
         private static object? FindNodeByKey(DiffTreeViewModel vm, string key)
