@@ -58,8 +58,12 @@
                             <TextBlock Text="{Binding DisplayName}" Margin="15,0,0,0" FontStyle="Italic" Foreground="DimGray" TextWrapping="Wrap"/>
                         </DataTemplate>
 
-                        <DataTemplate DataType="vm:EventDetailNode">
+                        <TreeDataTemplate DataType="vm:EventDetailNode" ItemsSource="{Binding Sources}">
                             <TextBlock Text="{Binding DisplayName}" Margin="15,0,0,0" FontStyle="Italic" Foreground="SteelBlue" TextWrapping="Wrap"/>
+                        </TreeDataTemplate>
+
+                        <DataTemplate DataType="vm:EventSourceDetailNode">
+                            <TextBlock Text="{Binding DisplayName}" Margin="30,0,0,0" FontStyle="Italic" Foreground="DimGray" TextWrapping="Wrap"/>
                         </DataTemplate>
 
                         <TreeDataTemplate DataType="vm:SourceNode" ItemsSource="{Binding Details}">

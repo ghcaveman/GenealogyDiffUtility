@@ -1,4 +1,5 @@
 ﻿using System.Collections.Generic;
+using System.Collections.ObjectModel;
 
 namespace GenealogyDiffUtility
 {
@@ -76,14 +77,33 @@ namespace GenealogyDiffUtility
     }
 
     /// <summary>
-    /// A lightweight display leaf shown beneath an <see cref="IndividualNode"/> or
+    /// A lightweight display node shown beneath an <see cref="IndividualNode"/> or
     /// <see cref="FamilyNode"/> when the "Details" view is active. It surfaces the
     /// events (birth, death, marriage, census, residence, etc.) associated with
-    /// the record, without participating in cross-tree sync.
+    /// the record, without participating in cross-tree sync. Each event can
+    /// optionally expand to show the sources that prove it.
     /// </summary>
     internal class EventDetailNode : TreeNodeBase
     {
         public string Role { get; set; } = string.Empty;   // "Event"
+        public string DisplayName { get; set; } = string.Empty;
+
+        /// <summary>
+        /// The sources that cite this event, shown as expandable children when
+        /// the event has any citations. These are display-only leaves and do not
+        /// participate in cross-tree sync.
+        /// </summary>
+        public ObservableCollection<TreeNodeBase> Sources { get; } = new();
+    }
+
+    /// <summary>
+    /// A lightweight display leaf shown beneath an <see cref="EventDetailNode"/>
+    /// when the "Details" view is active. It surfaces a single source that cites
+    /// the event, without participating in cross-tree sync.
+    /// </summary>
+    internal class EventSourceDetailNode : TreeNodeBase
+    {
+        public string Role { get; set; } = "Source";
         public string DisplayName { get; set; } = string.Empty;
     }
 }

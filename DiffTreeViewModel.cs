@@ -461,11 +461,32 @@ namespace GenealogyDiffUtility
             foreach (var evt in family.Events)
             {
                 if (evt.IsInternal) continue;
-                family.Details.Add(new EventDetailNode
+                var eventNode = new EventDetailNode
                 {
                     Role = "Event",
                     DisplayName = $"Event: {evt.DisplayName}"
-                });
+                };
+                AddEventSources(eventNode, evt);
+                family.Details.Add(eventNode);
+            }
+        }
+
+        /// <summary>
+        /// Resolves the sources that cite the given event and appends them as
+        /// expandable children beneath the event's detail node. Sources are
+        /// display-only leaves and do not participate in cross-tree sync.
+        /// </summary>
+        private void AddEventSources(EventDetailNode eventNode, GedcomEvent evt)
+        {
+            foreach (var sourceId in evt.SourceIds)
+            {
+                if (_context.Sources.TryGetValue(sourceId, out var source))
+                {
+                    eventNode.Sources.Add(new EventSourceDetailNode
+                    {
+                        DisplayName = $"Source: {source.Title}"
+                    });
+                }
             }
         }
 
@@ -522,11 +543,13 @@ namespace GenealogyDiffUtility
             foreach (var evt in person.Events)
             {
                 if (evt.IsInternal) continue;
-                person.Details.Add(new EventDetailNode
+                var eventNode = new EventDetailNode
                 {
                     Role = "Event",
                     DisplayName = $"Event: {evt.DisplayName}"
-                });
+                };
+                AddEventSources(eventNode, evt);
+                person.Details.Add(eventNode);
             }
         }
 
