@@ -55,7 +55,8 @@ namespace GenealogyDiffUtility
     /// <summary>
     /// A lightweight display leaf shown beneath a <see cref="SourceNode"/> when
     /// the "Details" view is active. It surfaces the records (Individual, Family,
-    /// etc.) that reference the source, without participating in cross-tree sync.
+    /// etc.) that reference the source — either directly or via one of their
+    /// events — without participating in cross-tree sync.
     /// </summary>
     internal class SourceDetailNode : TreeNodeBase
     {

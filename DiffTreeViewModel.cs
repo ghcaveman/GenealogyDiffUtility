@@ -353,18 +353,22 @@ namespace GenealogyDiffUtility
         }
 
         /// <summary>
-        /// Resolves the individuals and families that reference this source and
-        /// appends them as detail sub-nodes, providing a reverse-lookup of which
-        /// records are proven by this source.
+        /// Resolves the individuals and families that reference this source
+        /// (either directly or via any of their events) and appends them as
+        /// detail sub-nodes, providing a reverse-lookup of which records are
+        /// proven by this source.
         /// </summary>
         private void BuildSourceDetails(SourceNode source)
         {
-            // Individuals that reference this source
+            // Individuals that reference this source (directly or via their events)
             foreach (var person in _context.Individuals.Values
                 .OrderBy(p => p.DisplayName)
                 .ThenBy(p => p.Id))
             {
-                if (person.SourceIds.Contains(source.Id))
+                bool referencesSource = person.SourceIds.Contains(source.Id) ||
+                    person.Events.Any(e => e.SourceIds.Contains(source.Id));
+
+                if (referencesSource)
                 {
                     source.Details.Add(new SourceDetailNode
                     {
@@ -374,12 +378,15 @@ namespace GenealogyDiffUtility
                 }
             }
 
-            // Families that reference this source
+            // Families that reference this source (directly or via their events)
             foreach (var family in _context.Families.Values
                 .OrderBy(f => f.DisplayName)
                 .ThenBy(f => f.Id))
             {
-                if (family.SourceIds.Contains(source.Id))
+                bool referencesSource = family.SourceIds.Contains(source.Id) ||
+                    family.Events.Any(e => e.SourceIds.Contains(source.Id));
+
+                if (referencesSource)
                 {
                     source.Details.Add(new SourceDetailNode
                     {
