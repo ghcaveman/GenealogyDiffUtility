@@ -6,6 +6,19 @@ namespace GenealogyDiffUtility
 {
     internal static class GedcomParser
     {
+        // Standard GEDCOM event tags that can appear on individuals or families
+        private static readonly HashSet<string> EventTags = new(StringComparer.Ordinal)
+        {
+            // Individual events
+            "BIRT", "DEAT", "BURI", "CREM", "ADOP", "BAPM", "BARM", "BASM", "BLES",
+            "CHR", "CHRA", "CONF", "EMIG", "FCOM", "GRAD", "IMMI", "NATU", "ORDN",
+            "RETI", "PROB", "WILL", "CENS", "EDUC", "OCCU", "RESI",
+            // Family events
+            "ANUL", "DIV", "DIVF", "ENGA", "MARR", "MARB", "MARC", "MARL", "MARS",
+            // Generic event
+            "EVEN"
+        };
+
         public static GedcomTreeContext Parse(string filePath)
         {
             return ParseFile(filePath);
@@ -23,6 +36,7 @@ namespace GenealogyDiffUtility
             NoteNode? currentNote = null;
             string currentSection = "";
             string currentRepoField = ""; // Tracks which field (NAME/ADDR) a CONC line belongs to
+            GedcomEvent? currentEvent = null;
 
             // Sub-context flags specifically for the Header block
             bool insideHeadSour = false;
@@ -48,6 +62,7 @@ namespace GenealogyDiffUtility
                         currentSource = null;
                         currentRepository = null;
                         currentNote = null;
+                        currentEvent = null;
                         currentRepoField = "";
                         insideHeadSour = false;
                         insideHeadGedc = false;
@@ -137,94 +152,64 @@ namespace GenealogyDiffUtility
                     // --- INDIVIDUALS PARSING SYSTEM ---
                     else if (currentSection == "INDI" && currentIndividual != null)
                     {
-                        if (tag == "NAME")
-                        {
-                            currentIndividual.FullName = data.Replace("/", "").Trim();
-                            if (data.Contains("/"))
-                            {
-                                int start = data.IndexOf('/') + 1;
-                                int end = data.LastIndexOf('/');
-                                if (end > start)
-                                    currentIndividual.LastName = data.Substring(start, end - start).Trim();
-                            }
-                            if (string.IsNullOrEmpty(currentIndividual.LastName))
-                                currentIndividual.LastName = "Unknown";
-                        }
-                        else if (tag == "SEX") currentIndividual.Gender = data;
-                        else if (tag == "BIRT") currentSection = "INDI_BIRT";
-                        else if (tag == "DEAT") currentSection = "INDI_DEAT";
-                        else if (tag == "SOUR") AddSourceAssociation(currentIndividual.SourceIds, data);
-                        else if (tag == "NOTE")
-                        {
-                            AddNoteAssociation(currentIndividual.NoteIds, data);
-                        }
+                        ProcessIndividualTag(currentIndividual, tag, data, ref currentSection, ref currentEvent);
                     }
-                    else if (currentSection == "INDI_BIRT" && currentIndividual != null)
+                    else if (currentSection == "INDI_EVENT" && currentIndividual != null && currentEvent != null)
                     {
                         if (level == "1")
                         {
+                            // Stepped out of event back to INDI — process this line as INDI-level
                             currentSection = "INDI";
-                            // Re-process line if it stepped out of BIRT back into INDI
-                            if (tag == "DEAT") currentSection = "INDI_DEAT";
+                            currentEvent = null;
+                            ProcessIndividualTag(currentIndividual, tag, data, ref currentSection, ref currentEvent);
                         }
-                        else if (tag == "DATE") currentIndividual.BirthDate = data;
-                        else if (tag == "PLAC") currentIndividual.BirthPlace = data;
-                        else if (tag == "SOUR") AddSourceAssociation(currentIndividual.SourceIds, data);
-                        else if (tag == "NOTE")
+                        else if (tag == "DATE")
                         {
-                            AddNoteAssociation(currentIndividual.NoteIds, data);
+                            currentEvent.Date = data;
+                            if (currentEvent.Type == "BIRT") currentIndividual.BirthDate = data;
+                            else if (currentEvent.Type == "DEAT") currentIndividual.DeathDate = data;
                         }
+                        else if (tag == "PLAC")
+                        {
+                            currentEvent.Place = data;
+                            if (currentEvent.Type == "BIRT") currentIndividual.BirthPlace = data;
+                            else if (currentEvent.Type == "DEAT") currentIndividual.DeathPlace = data;
+                        }
+                        else if (tag == "TYPE") currentEvent.SubType = data;
+                        else if (tag == "SOUR") AddSourceAssociation(currentEvent.SourceIds, data);
+                        else if (tag == "NOTE") AddNoteAssociation(currentEvent.NoteIds, data);
                     }
-                    else if (currentSection == "INDI_DEAT" && currentIndividual != null)
-                    {
-                        if (level == "1")
-                        {
-                            currentSection = "INDI";
-                            // Re-process line if it stepped out of DEAT back into INDI
-                            if (tag == "BIRT") currentSection = "INDI_BIRT";
-                        }
-                        else if (tag == "DATE") currentIndividual.DeathDate = data;
-                        else if (tag == "PLAC") currentIndividual.DeathPlace = data;
-                        else if (tag == "SOUR") AddSourceAssociation(currentIndividual.SourceIds, data);
-                        else if (tag == "SOUR") AddSourceAssociation(currentIndividual.SourceIds, data);
-                        else if (tag == "NOTE")
-                        {
-                            AddNoteAssociation(currentIndividual.NoteIds, data);
-                        }
-                    }
+
+                    // --- FAMILIES PARSING SYSTEM ---
                     else if (currentSection == "FAM" && currentFamily != null)
                     {
-                        if (tag == "HUSB") currentFamily.HusbandId = data;
-                        else if (tag == "WIFE") currentFamily.WifeId = data;
-                        else if (tag == "CHIL") currentFamily.ChildrenIds.Add(data);
-                        else if (tag == "MARR") currentSection = "FAM_MARR";
-                        else if (tag == "SOUR") AddSourceAssociation(currentFamily.SourceIds, data);
-                        else if (tag == "NOTE")
-                        {
-                            AddNoteAssociation(currentFamily.NoteIds, data);
-                        }
+                        ProcessFamilyTag(currentFamily, tag, data, ref currentSection, ref currentEvent);
                     }
-                    else if (currentSection == "FAM_MARR" && currentFamily != null)
+                    else if (currentSection == "FAM_EVENT" && currentFamily != null && currentEvent != null)
                     {
-                        if (level == "2")
+                        if (level == "1")
                         {
-                            if (tag == "DATE") currentFamily.MarriageDate = data;
-                            else if (tag == "PLAC") currentFamily.MarriagePlace = data;
-                        }
-                        else if (level == "1")
-                        {
-                            // Stepped out of MARR back into FAM — process the FAM-level tags on this line
+                            // Stepped out of event back to FAM — process this line as FAM-level
                             currentSection = "FAM";
-                            if (tag == "HUSB") currentFamily.HusbandId = data;
-                            else if (tag == "WIFE") currentFamily.WifeId = data;
-                            else if (tag == "CHIL") currentFamily.ChildrenIds.Add(data);
-                            else if (tag == "MARR") currentSection = "FAM_MARR";
-                            else if (tag == "NOTE")
-                            {
-                                AddNoteAssociation(currentFamily.NoteIds, data);
-                            }
+                            currentEvent = null;
+                            ProcessFamilyTag(currentFamily, tag, data, ref currentSection, ref currentEvent);
                         }
+                        else if (tag == "DATE")
+                        {
+                            currentEvent.Date = data;
+                            if (currentEvent.Type == "MARR") currentFamily.MarriageDate = data;
+                        }
+                        else if (tag == "PLAC")
+                        {
+                            currentEvent.Place = data;
+                            if (currentEvent.Type == "MARR") currentFamily.MarriagePlace = data;
+                        }
+                        else if (tag == "TYPE") currentEvent.SubType = data;
+                        else if (tag == "SOUR") AddSourceAssociation(currentEvent.SourceIds, data);
+                        else if (tag == "NOTE") AddNoteAssociation(currentEvent.NoteIds, data);
                     }
+
+                    // --- SOURCES PARSING SYSTEM ---
                     else if (currentSection == "SOUR" && currentSource != null)
                     {
                         if (tag == "TITL") currentSource.Title = data;
@@ -235,6 +220,8 @@ namespace GenealogyDiffUtility
                             AddNoteAssociation(currentSource.NoteIds, data);
                         }
                     }
+
+                    // --- REPOSITORIES PARSING SYSTEM ---
                     else if (currentSection == "REPO" && currentRepository != null)
                     {
                         if (level == "1" && tag == "NAME")
@@ -271,6 +258,8 @@ namespace GenealogyDiffUtility
                             currentRepository.Address += data;
                         }
                     }
+
+                    // --- NOTES PARSING SYSTEM ---
                     else if (currentSection == "NOTE" && currentNote != null)
                     {
                         if (tag == "CONC")
@@ -287,6 +276,59 @@ namespace GenealogyDiffUtility
                 }
             }
             return context;
+        }
+
+        /// <summary>
+        /// Processes a level-1 tag within an individual record. Handles name, sex,
+        /// event tags (which create a new <see cref="GedcomEvent"/> and switch to
+        /// the event sub-section), and source/note associations.
+        /// </summary>
+        private static void ProcessIndividualTag(IndividualNode person, string tag, string data,
+            ref string currentSection, ref GedcomEvent? currentEvent)
+        {
+            if (tag == "NAME")
+            {
+                person.FullName = data.Replace("/", "").Trim();
+                if (data.Contains("/"))
+                {
+                    int start = data.IndexOf('/') + 1;
+                    int end = data.LastIndexOf('/');
+                    if (end > start)
+                        person.LastName = data.Substring(start, end - start).Trim();
+                }
+                if (string.IsNullOrEmpty(person.LastName))
+                    person.LastName = "Unknown";
+            }
+            else if (tag == "SEX") person.Gender = data;
+            else if (EventTags.Contains(tag))
+            {
+                currentEvent = new GedcomEvent { Type = tag, Data = data };
+                person.Events.Add(currentEvent);
+                currentSection = "INDI_EVENT";
+            }
+            else if (tag == "SOUR") AddSourceAssociation(person.SourceIds, data);
+            else if (tag == "NOTE") AddNoteAssociation(person.NoteIds, data);
+        }
+
+        /// <summary>
+        /// Processes a level-1 tag within a family record. Handles spouse/child
+        /// references, event tags (which create a new <see cref="GedcomEvent"/> and
+        /// switch to the event sub-section), and source/note associations.
+        /// </summary>
+        private static void ProcessFamilyTag(FamilyNode family, string tag, string data,
+            ref string currentSection, ref GedcomEvent? currentEvent)
+        {
+            if (tag == "HUSB") family.HusbandId = data;
+            else if (tag == "WIFE") family.WifeId = data;
+            else if (tag == "CHIL") family.ChildrenIds.Add(data);
+            else if (EventTags.Contains(tag))
+            {
+                currentEvent = new GedcomEvent { Type = tag, Data = data };
+                family.Events.Add(currentEvent);
+                currentSection = "FAM_EVENT";
+            }
+            else if (tag == "SOUR") AddSourceAssociation(family.SourceIds, data);
+            else if (tag == "NOTE") AddNoteAssociation(family.NoteIds, data);
         }
 
         /// <summary>

@@ -20,16 +20,22 @@ namespace GenealogyDiffUtility
         // Pointers to sources that prove this family exists
         public List<string> SourceIds { get; set; } = new();
 
+        /// <summary>
+        /// All events (marriage, divorce, etc.) associated with this family,
+        /// parsed from the GEDCOM file.
+        /// </summary>
+        public List<GedcomEvent> Events { get; set; } = new();
+
         // Resolved references to the parent individuals (set by DiffTreeViewModel.LoadTree)
         public IndividualNode? Husband { get; set; }
         public IndividualNode? Wife { get; set; }
 
         /// <summary>
-        /// Display-only sub-nodes (spouses and children) that appear beneath this
-        /// family when the Detail view (the Details checkbox) is enabled. These
+        /// Display-only sub-nodes (spouses, children, and events) that appear beneath
+        /// this family when the Detail view (the Details checkbox) is enabled. These
         /// nodes are lightweight wrappers and do not participate in cross-tree sync.
         /// </summary>
-        public ObservableCollection<FamilyDetailNode> Details { get; } = new();
+        public ObservableCollection<TreeNodeBase> Details { get; } = new();
 
         /// <summary>
         /// Displays the family as "LastName Father, FirstName Father, LastName Mother,

@@ -73,4 +73,16 @@ namespace GenealogyDiffUtility
         public string Role { get; set; } = string.Empty;   // "Spouse", "Child"
         public string DisplayName { get; set; } = string.Empty;
     }
+
+    /// <summary>
+    /// A lightweight display leaf shown beneath an <see cref="IndividualNode"/> or
+    /// <see cref="FamilyNode"/> when the "Details" view is active. It surfaces the
+    /// events (birth, death, marriage, census, residence, etc.) associated with
+    /// the record, without participating in cross-tree sync.
+    /// </summary>
+    internal class EventDetailNode : TreeNodeBase
+    {
+        public string Role { get; set; } = string.Empty;   // "Event"
+        public string DisplayName { get; set; } = string.Empty;
+    }
 }

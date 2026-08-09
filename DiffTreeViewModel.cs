@@ -49,8 +49,9 @@ namespace GenealogyDiffUtility
         private bool _showDetails;
         /// <summary>
         /// When true, each individual in the tree shows sub-nodes for their
-        /// spouses, children, and notes. Toggling this rebuilds those detail
-        /// sub-nodes in place without reloading the whole tree.
+        /// spouses, children, events, and notes; each family shows sub-nodes
+        /// for spouses, children, and events. Toggling this rebuilds those
+        /// detail sub-nodes in place without reloading the whole tree.
         /// </summary>
         public bool ShowDetails
         {
@@ -390,10 +391,11 @@ namespace GenealogyDiffUtility
         }
 
         /// <summary>
-        /// Resolves the spouses and children for a single family and appends them
-        /// as detail sub-nodes. The husband and wife are shown as "Spouse" entries
-        /// (each labeled with their role in the family), and each child is shown
-        /// as a "Child" entry.
+        /// Resolves the spouses, children, and events for a single family and
+        /// appends them as detail sub-nodes. The husband and wife are shown as
+        /// "Spouse" entries (each labeled with their role in the family), each
+        /// child is shown as a "Child" entry, and each event is shown as an
+        /// "Event" entry.
         /// </summary>
         private void BuildFamilyDetails(FamilyNode family)
         {
@@ -429,11 +431,22 @@ namespace GenealogyDiffUtility
                     });
                 }
             }
+
+            // Events (marriage, divorce, etc.)
+            foreach (var evt in family.Events)
+            {
+                if (evt.IsInternal) continue;
+                family.Details.Add(new EventDetailNode
+                {
+                    Role = "Event",
+                    DisplayName = $"Event: {evt.DisplayName}"
+                });
+            }
         }
 
         /// <summary>
-        /// Resolves the spouses, children, and notes for a single individual and
-        /// appends them as detail sub-nodes.
+        /// Resolves the spouses, children, notes, and events for a single
+        /// individual and appends them as detail sub-nodes.
         /// </summary>
         private void BuildDetails(IndividualNode person)
         {
@@ -478,6 +491,17 @@ namespace GenealogyDiffUtility
                         DisplayName = $"Note: {note.DisplayName}"
                     });
                 }
+            }
+
+            // Events (birth, death, burial, baptism, census, residence, etc.)
+            foreach (var evt in person.Events)
+            {
+                if (evt.IsInternal) continue;
+                person.Details.Add(new EventDetailNode
+                {
+                    Role = "Event",
+                    DisplayName = $"Event: {evt.DisplayName}"
+                });
             }
         }
 

@@ -35,11 +35,18 @@ namespace GenealogyDiffUtility
         public List<string> NoteIds { get; set; } = new();
 
         /// <summary>
-        /// Display-only sub-nodes (spouses, children, notes) that appear beneath this
-        /// individual when the Detail view (the "Details" checkbox) is enabled. These
-        /// nodes are lightweight wrappers and do not participate in cross-tree sync.
+        /// All events (birth, death, burial, baptism, census, residence, etc.)
+        /// associated with this individual, parsed from the GEDCOM file.
         /// </summary>
-        public ObservableCollection<IndividualDetailNode> Details { get; } = new();
+        public List<GedcomEvent> Events { get; set; } = new();
+
+        /// <summary>
+        /// Display-only sub-nodes (spouses, children, notes, events) that appear
+        /// beneath this individual when the Detail view (the "Details" checkbox) is
+        /// enabled. These nodes are lightweight wrappers and do not participate in
+        /// cross-tree sync.
+        /// </summary>
+        public ObservableCollection<TreeNodeBase> Details { get; } = new();
 
         /// <summary>
         /// Displays the name in "LastName, FirstName (b. mm/dd/yyyy d. mm/dd/yyyy)" format.
