@@ -58,7 +58,6 @@ namespace GenealogyDiffUtility
                 {
                     matchedOtherKeys.Add(key);
                     matches++;
-                    sb.AppendLine($"  [MATCH] {person.DisplayName}");
                     if (includeDetails)
                         AppendPersonDetails(sb, person, otherPerson, thisCtx, otherCtx, ref totalMatches, ref totalMissing, ref totalExtra);
                 }
@@ -104,7 +103,6 @@ namespace GenealogyDiffUtility
                 {
                     matchedOtherKeys.Add(key);
                     matches++;
-                    sb.AppendLine($"  [MATCH] {family.DisplayName}");
                     if (includeDetails)
                         AppendFamilyDetails(sb, family, otherFamily, thisCtx, otherCtx, ref totalMatches, ref totalMissing, ref totalExtra);
                 }
@@ -150,7 +148,6 @@ namespace GenealogyDiffUtility
                 {
                     matchedOtherKeys.Add(key);
                     matches++;
-                    sb.AppendLine($"  [MATCH] {source.Title}");
                 }
                 else
                 {
@@ -192,7 +189,6 @@ namespace GenealogyDiffUtility
                 {
                     matchedOtherKeys.Add(key);
                     matches++;
-                    sb.AppendLine($"  [MATCH] {repo.Name}");
                 }
                 else
                 {
@@ -229,7 +225,6 @@ namespace GenealogyDiffUtility
                 {
                     matchedEventKeys.Add(key);
                     totalMatches++;
-                    sb.AppendLine($"      [MATCH] Event: {evt.DisplayName}");
                 }
                 else
                 {
@@ -258,7 +253,6 @@ namespace GenealogyDiffUtility
                 {
                     matchedSourceKeys.Add(key);
                     totalMatches++;
-                    sb.AppendLine($"      [MATCH] Source: {src.Title}");
                 }
                 else
                 {
@@ -303,7 +297,6 @@ namespace GenealogyDiffUtility
                 {
                     matchedEventKeys.Add(key);
                     totalMatches++;
-                    sb.AppendLine($"      [MATCH] Event: {evt.DisplayName}");
                 }
                 else
                 {
@@ -332,7 +325,6 @@ namespace GenealogyDiffUtility
                 {
                     matchedSourceKeys.Add(key);
                     totalMatches++;
-                    sb.AppendLine($"      [MATCH] Source: {src.Title}");
                 }
                 else
                 {
