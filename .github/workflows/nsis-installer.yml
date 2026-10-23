@@ -91,13 +91,18 @@ jobs:
     - name: Download AppImage Compiler Tool
       run: wget -q "https://github.com"
 
-    - name: Set Compiler Permissions
-      run: chmod a+x appimagetool-x86_64.AppImage
+    # FIXED: Extracts the appimagetool bundle manually to bypass FUSE requirements inside GitHub Actions container loops
+    - name: Extract Compiler Environment
+      run: |
+        chmod a+x appimagetool-x86_64.AppImage
+        ./appimagetool-x86_64.AppImage --appimage-extract
 
     - name: Build Universal Linux AppImage Package
       run: |
         export ARCH=x86_64
-        ./appimagetool-x86_64.AppImage ./AppDir ./GenealogyDiffUtility-${{ github.ref_name }}.AppImage
+        # Invokes the extracted execution binary cleanly out of the squashfs folder layout path
+        ./squashfs-root/AppRun ./AppDir ./GenealogyDiffUtility-${{ github.ref_name }}.AppImage
+
     - name: Upload Linux Artifact
       uses: actions/upload-artifact@v4
       with:
