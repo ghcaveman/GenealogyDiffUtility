@@ -12,18 +12,28 @@ jobs:
     steps:
     - name: Checkout Repository
       uses: actions/checkout@v4
+
     - name: Setup .NET SDK
       uses: actions/setup-dotnet@v4
       with:
         dotnet-version: '10.0.x'
-    - name: Publish Windows
+
+    - name: Restore Dependencies
+      run: dotnet restore GenealogyDiffUtility.csproj
+
+    - name: Publish Windows Binaries
       run: dotnet publish GenealogyDiffUtility.csproj -c Release -r win-x64 --no-self-contained -o ./publish
+
     - name: Install NSIS
       uses: negrutiu/nsis-install@v2
-    - name: Compile NSIS
+      with:
+        version: '3.10'
+
+    - name: Compile NSIS Installer
       run: |
         makensis installer.nsi
         Move-Item -Path "GenealogyDiffUtility-Setup.exe" -Destination "GenealogyDiffUtility-Setup-${{ github.ref_name }}.exe"
+
     - name: Upload Windows Artifact
       uses: actions/upload-artifact@v4
       with:
@@ -35,21 +45,52 @@ jobs:
     steps:
     - name: Checkout Repository
       uses: actions/checkout@v4
+
     - name: Setup .NET SDK
       uses: actions/setup-dotnet@v4
       with:
         dotnet-version: '10.0.x'
-    - name: Publish Linux
-      run: dotnet publish GenealogyDiffUtility.csproj -c Release -r linux-x64 -o ./publish-linux
-    - name: Install DotnetPackager Tool
-      run: dotnet tool install --global DotnetPackaging.Remote.CLI
-    - name: Package AppImage
+
+    - name: Restore Dependencies
+      run: dotnet restore GenealogyDiffUtility.csproj
+
+    - name: Publish Linux Binaries
+      run: dotnet publish GenealogyDiffUtility.csproj -c Release -r linux-x64 --self-contained true -p:PublishSingleFile=true -o ./AppDir/usr/bin
+
+    - name: Construct AppImage Shell Structure
       run: |
-        dotnetpackager appimage from-directory \
-          --directory ./publish-linux \
-          --output ./GenealogyDiffUtility-${{ github.ref_name }}.AppImage \
-          --application-name "GenealogyDiffUtility" \
-          --version "${{ github.ref_name }}"
+        mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
+        
+        # Create launcher metadata file
+        cat <<EOF > AppDir/GenealogyDiffUtility.desktop
+        [Desktop Entry]
+        Type=Application
+        Name=GenealogyDiffUtility
+        Comment=A utility to compare Genealogy data
+        Exec=GenealogyDiffUtility
+        Icon=GenealogyDiffUtility
+        Categories=Development;Utility;
+        EOF
+        
+        # Create standard layout graphical runtime placeholder
+        convert -size 256x256 xc:transparent AppDir/GenealogyDiffUtility.png
+        cp AppDir/GenealogyDiffUtility.png AppDir/usr/share/icons/hicolor/256x256/apps/GenealogyDiffUtility.png
+        
+        # Inject standard execution link wrapper script
+        cat <<EOF > AppDir/AppRun
+        #!/bin/sh
+        SELF=\$(readlink -f "\$0")
+        HERE=\$(dirname "\$SELF")
+        exec "\$HERE/usr/bin/GenealogyDiffUtility" "\$@"
+        EOF
+        chmod +x AppDir/AppRun
+
+    - name: Compile Standalone AppImage File
+      run: |
+        wget -q "https://github.com"
+        chmod a+x appimagetool-x86_64.AppImage
+        ARCH=x86_64 ./appimagetool-x86_64.AppImage ./AppDir ./GenealogyDiffUtility-${{ github.ref_name }}.AppImage
+
     - name: Upload Linux Artifact
       uses: actions/upload-artifact@v4
       with:
@@ -67,14 +108,18 @@ jobs:
       with:
         dotnet-version: '10.0.x'
 
-    - name: Install Bundler Tool
-      run: dotnet tool install --global dotnet-bundle
+    - name: Restore Dependencies
+      run: dotnet restore GenealogyDiffUtility.csproj
 
-    # Creates the GenealogyDiffUtility.app structure automatically
-    - name: Create App Bundle
-      run: dotnet bundle GenealogyDiffUtility.csproj -c Release -r osx-x64 --output ./publish-mac
+    - name: Compile App Bundle
+      run: |
+        dotnet publish GenealogyDiffUtility.csproj \
+          -c Release \
+          -r osx-x64 \
+          -p:PublishBundle=true \
+          -o ./publish-mac
 
-    # Uses the native macOS utility to pack the bundle into a mountable installer disk image
+    # Wraps the resulting bundle into a standard mountable disk image installer
     - name: Create DMG File
       run: |
         brew install create-dmg
@@ -99,25 +144,30 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+
     steps:
     - name: Checkout Repository
       uses: actions/checkout@v4
+
     - name: Download Windows Asset
       uses: actions/download-artifact@v4
       with:
         name: GenealogyDiffUtility-Win-${{ github.ref_name }}
         path: ./artifacts
+
     - name: Download Linux Asset
       uses: actions/download-artifact@v4
       with:
         name: GenealogyDiffUtility-Linux-${{ github.ref_name }}
         path: ./artifacts
+
     - name: Download macOS Asset
       uses: actions/download-artifact@v4
       with:
         name: GenealogyDiffUtility-Mac-${{ github.ref_name }}
         path: ./artifacts
-    - name: Create GitHub Release
+
+    - name: Create Multi-Platform GitHub Release
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
