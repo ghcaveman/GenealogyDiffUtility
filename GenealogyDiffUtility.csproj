@@ -6,6 +6,10 @@
     <Nullable>enable</Nullable>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <DefaultItemExcludes>$(DefaultItemExcludes);GenealogyDiffUtility.Tests\**</DefaultItemExcludes>
+    
+    <!-- Optimizes deployment file sizes for cross-platform single executable delivery -->
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>true</SelfContained>
   </PropertyGroup>
 
   <ItemGroup>

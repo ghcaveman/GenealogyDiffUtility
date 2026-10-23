@@ -1,4 +1,4 @@
-name: Build Avalonia App & NSIS Installer
+name: Build Cross-Platform Deployments
 
 on:
   push:
@@ -7,16 +7,14 @@ on:
       - 'v*'
 
 jobs:
-  build:
+  build-windows:
     runs-on: windows-latest
     outputs:
       tag_name: ${{ github.ref_name }}
-
     steps:
     - name: Checkout Repository
       uses: actions/checkout@v4
 
-    # Setup standard SDK environment for modern .NET 10 compilation
     - name: Setup .NET SDK
       uses: actions/setup-dotnet@v4
       with:
@@ -25,7 +23,6 @@ jobs:
     - name: Restore Dependencies
       run: dotnet restore GenealogyDiffUtility.csproj
 
-    # Publishes a self-contained, high-performance runtime configuration folder
     - name: Publish Application
       run: dotnet publish GenealogyDiffUtility.csproj -c Release -r win-x64 --no-self-contained -o ./publish
 
@@ -39,14 +36,51 @@ jobs:
         makensis installer.nsi
         Move-Item -Path "GenealogyDiffUtility-Setup.exe" -Destination "GenealogyDiffUtility-Setup-${{ github.ref_name }}.exe"
 
-    - name: Upload Installer Artifact
+    - name: Upload Windows Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: GenealogyDiffUtility-Installer-${{ github.ref_name }}
+        name: GenealogyDiffUtility-Win-${{ github.ref_name }}
         path: GenealogyDiffUtility-Setup-${{ github.ref_name }}.exe
 
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Setup .NET SDK
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '10.0.x'
+
+    - name: Restore Dependencies
+      run: dotnet restore GenealogyDiffUtility.csproj
+
+    # Publishes standard standalone production files optimized for Linux runtimes
+    - name: Publish Linux Binaries
+      run: dotnet publish GenealogyDiffUtility.csproj -c Release -r linux-x64 -o ./publish-linux
+
+    # Installs the automated packaging system globally on the Ubuntu runner
+    - name: Install DotnetPackager Tool
+      run: dotnet tool install --global DotnetPackaging.Remote.CLI
+
+    # Wraps publish folder contents cleanly into a standalone universal AppImage
+    - name: Package AppImage Build
+      run: |
+        dotnetpackager appimage from-directory \
+          --directory ./publish-linux \
+          --output ./GenealogyDiffUtility-${{ github.ref_name }}.AppImage \
+          --application-name "GenealogyDiffUtility" \
+          --version "${{ github.ref_name }}"
+
+    - name: Upload Linux Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: GenealogyDiffUtility-Linux-${{ github.ref_name }}
+        path: GenealogyDiffUtility-${{ github.ref_name }}.AppImage
+
   create-release:
-    needs: build
+    needs: [build-windows, build-linux]
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     permissions:
@@ -56,17 +90,25 @@ jobs:
     - name: Checkout Repository
       uses: actions/checkout@v4
 
-    - name: Download Built Installer Artifact
+    - name: Download Windows Setup Binary
       uses: actions/download-artifact@v4
       with:
-        name: GenealogyDiffUtility-Installer-${{ needs.build.outputs.tag_name }}
+        name: GenealogyDiffUtility-Win-${{ github.ref_name }}
         path: ./artifacts
 
-    - name: Create GitHub Release
+    - name: Download Linux AppImage Binary
+      uses: actions/download-artifact@v4
+      with:
+        name: GenealogyDiffUtility-Linux-${{ github.ref_name }}
+        path: ./artifacts
+
+    # Bundles both cross-platform distribution targets cleanly into your target release tag
+    - name: Create Multi-Platform GitHub Release
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
-        gh release create "${{ needs.build.outputs.tag_name }}" \
-          ./artifacts/GenealogyDiffUtility-Setup-${{ needs.build.outputs.tag_name }}.exe \
-          --title "Release ${{ needs.build.outputs.tag_name }}" \
+        gh release create "${{ github.ref_name }}" \
+          ./artifacts/GenealogyDiffUtility-Setup-${{ github.ref_name }}.exe \
+          ./artifacts/GenealogyDiffUtility-${{ github.ref_name }}.AppImage \
+          --title "Release ${{ github.ref_name }}" \
           --generate-notes
