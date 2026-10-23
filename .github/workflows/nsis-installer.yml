@@ -130,6 +130,14 @@ jobs:
       run: |
         brew install create-dmg
         
+        # Dynamically locate the bundle folder wherever the engine dropped it
+        REAL_BUNDLE_PATH=$(find ./publish-mac -name "GenealogyDiffUtility.app" -type d | head -n 1)
+        echo "Located bundle structure at: $REAL_BUNDLE_PATH"
+        
+        # Move it safely out to the main publish directory track
+        mv "$REAL_BUNDLE_PATH" ./publish-mac/
+        
+        # Compile the final deployable disk image installer asset cleanly
         create-dmg \
           --volname "GenealogyDiffUtility Setup" \
           --window-size 500 300 \
@@ -137,8 +145,8 @@ jobs:
           --icon "GenealogyDiffUtility.app" 175 120 \
           --app-drop-link 325 120 \
           "./GenealogyDiffUtility-${{ github.ref_name }}.dmg" \
-          "./publish-mac/net10.0/osx-x64/bundle/GenealogyDiffUtility.app"
-
+          "./publish-mac/GenealogyDiffUtility.app"
+          
     - name: Upload macOS Artifact
       uses: actions/upload-artifact@v4
       with:
