@@ -89,10 +89,7 @@ jobs:
 
     # FIXED: Combined compiler download, permission adjustment, and FUSE-less unpacking to resolve workspace dependency crashes
     - name: Download and Unpack AppImage Compiler Tool
-      run: |
-        wget -q "https://github.com"
-        chmod a+x appimagetool-x86_64.AppImage
-        ./appimagetool-x86_64.AppImage --appimage-extract
+      run: wget -O appimagetool-x86_64.AppImage "https://github.com" && chmod a+x appimagetool-x86_64.AppImage && ./appimagetool-x86_64.AppImage --appimage-extract
 
     - name: Build Universal Linux AppImage Package
       run: |
