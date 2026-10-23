@@ -90,12 +90,13 @@ jobs:
     # FIXED: Replaced the truncated URL with the full binary download path
     - name: Compile Standalone AppImage File
       run: |
-        # FIXED: Download the actual compiler binary from the official AppImage distribution channel
+        # Download the actual compiler binary from the official AppImage distribution channel
         wget -q "https://github.com"
         chmod a+x appimagetool-x86_64.AppImage
         
         # Build the final universal Linux executable package container
         ARCH=x86_64 ./appimagetool-x86_64.AppImage ./AppDir ./GenealogyDiffUtility-${{ github.ref_name }}.AppImage
+
     - name: Upload Linux Artifact
       uses: actions/upload-artifact@v4
       with:
@@ -116,27 +117,54 @@ jobs:
     - name: Restore Dependencies
       run: dotnet restore GenealogyDiffUtility.csproj
 
-    - name: Compile App Bundle
+    # Compiles standard high-performance standalone binaries for macOS runtimes
+    - name: Publish macOS Binaries
       run: |
         dotnet publish GenealogyDiffUtility.csproj \
           -c Release \
           -r osx-x64 \
-          -p:PublishBundle=true \
-          -o ./publish-mac
+          --self-contained true \
+          -p:PublishSingleFile=true \
+          -o ./publish-mac-bin
 
-    # FIXED: Used a wildcard find command to locate the app bundle dynamically regardless of internal .NET version directory nesting
+    # Manually creates the native macOS .app directory structure perfectly
+    - name: Structure Native Mac App Bundle
+      run: |
+        mkdir -p "GenealogyDiffUtility.app/Contents/MacOS"
+        mkdir -p "GenealogyDiffUtility.app/Contents/Resources"
+        
+        # Copy the single standalone executable target binary into the execution path
+        cp ./publish-mac-bin/GenealogyDiffUtility "GenealogyDiffUtility.app/Contents/MacOS/"
+        chmod +x "GenealogyDiffUtility.app/Contents/MacOS/GenealogyDiffUtility"
+        
+        # Inject a minimal valid structural Info.plist configuration file directly
+        cat <<EOF > "GenealogyDiffUtility.app/Contents/Info.plist"
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://apple.com">
+        <plist version="1.0">
+        <dict>
+            <key>CFBundleExecutable</key>
+            <string>GenealogyDiffUtility</string>
+            <key>CFBundleIdentifier</key>
+            <string>com.ghcaveman.genealogydiffutility</string>
+            <key>CFBundleName</key>
+            <string>GenealogyDiffUtility</string>
+            <key>CFBundlePackageType</key>
+            <string>APPL</string>
+            <key>CFBundleShortVersionString</key>
+            <string>1.0.0</string>
+            <key>CFBundleVersion</key>
+            <string>1.0.0</string>
+            <key>LSMinimumSystemVersion</key>
+            <string>10.15</string>
+        </dict>
+        </plist>
+        EOF
+
+    # Packages the structured app container directory into the mountable installation disk image
     - name: Create DMG File
       run: |
         brew install create-dmg
-        
-        # Dynamically locate the bundle folder wherever the engine dropped it
-        REAL_BUNDLE_PATH=$(find ./publish-mac -name "GenealogyDiffUtility.app" -type d | head -n 1)
-        echo "Located bundle structure at: $REAL_BUNDLE_PATH"
-        
-        # Move it safely out to the main publish directory track
-        mv "$REAL_BUNDLE_PATH" ./publish-mac/
-        
-        # Compile the final deployable disk image installer asset cleanly
         create-dmg \
           --volname "GenealogyDiffUtility Setup" \
           --window-size 500 300 \
@@ -144,7 +172,7 @@ jobs:
           --icon "GenealogyDiffUtility.app" 175 120 \
           --app-drop-link 325 120 \
           "./GenealogyDiffUtility-${{ github.ref_name }}.dmg" \
-          "./publish-mac/GenealogyDiffUtility.app"
+          "./GenealogyDiffUtility.app"
 
     - name: Upload macOS Artifact
       uses: actions/upload-artifact@v4
