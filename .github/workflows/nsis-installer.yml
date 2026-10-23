@@ -87,20 +87,16 @@ jobs:
         EOF
         chmod +x AppDir/AppRun
 
-    # FIXED: Replaced the truncated URL with the full binary download path
-    - name: Download AppImage Compiler Tool
-      run: wget -q "https://github.com"
-
-    # FIXED: Extracts the appimagetool bundle manually to bypass FUSE requirements inside GitHub Actions container loops
-    - name: Extract Compiler Environment
+    # FIXED: Combined compiler download, permission adjustment, and FUSE-less unpacking to resolve workspace dependency crashes
+    - name: Download and Unpack AppImage Compiler Tool
       run: |
+        wget -q "https://github.com"
         chmod a+x appimagetool-x86_64.AppImage
         ./appimagetool-x86_64.AppImage --appimage-extract
 
     - name: Build Universal Linux AppImage Package
       run: |
         export ARCH=x86_64
-        # Invokes the extracted execution binary cleanly out of the squashfs folder layout path
         ./squashfs-root/AppRun ./AppDir ./GenealogyDiffUtility-${{ github.ref_name }}.AppImage
 
     - name: Upload Linux Artifact
@@ -123,7 +119,6 @@ jobs:
     - name: Restore Dependencies
       run: dotnet restore GenealogyDiffUtility.csproj
 
-    # Compiles standard high-performance standalone binaries for macOS runtimes
     - name: Publish macOS Binaries
       run: |
         dotnet publish GenealogyDiffUtility.csproj \
@@ -133,17 +128,14 @@ jobs:
           -p:PublishSingleFile=true \
           -o ./publish-mac-bin
 
-    # Manually creates the native macOS .app directory structure perfectly
     - name: Structure Native Mac App Bundle
       run: |
         mkdir -p "GenealogyDiffUtility.app/Contents/MacOS"
         mkdir -p "GenealogyDiffUtility.app/Contents/Resources"
         
-        # Copy the single standalone executable target binary into the execution path
         cp ./publish-mac-bin/GenealogyDiffUtility "GenealogyDiffUtility.app/Contents/MacOS/"
         chmod +x "GenealogyDiffUtility.app/Contents/MacOS/GenealogyDiffUtility"
         
-        # Inject a minimal valid structural Info.plist configuration file directly
         cat <<EOF > "GenealogyDiffUtility.app/Contents/Info.plist"
         <?xml version="1.0" encoding="UTF-8"?>
         <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://apple.com">
@@ -167,7 +159,6 @@ jobs:
         </plist>
         EOF
 
-    # Packages the structured app container directory into the mountable installation disk image
     - name: Create DMG File
       run: |
         brew install create-dmg
