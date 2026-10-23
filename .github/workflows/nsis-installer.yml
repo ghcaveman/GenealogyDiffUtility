@@ -90,7 +90,7 @@ jobs:
     # FIXED: Replaced the truncated URL with the full binary download path
     - name: Compile Standalone AppImage File
       run: |
-        wget -q "https://github.com"
+        wget -q "https://github.com/ghcaveman/GenealogyDiffUtility"
         chmod a+x appimagetool-x86_64.AppImage
         ARCH=x86_64 ./appimagetool-x86_64.AppImage ./AppDir ./GenealogyDiffUtility-${{ github.ref_name }}.AppImage
 
@@ -126,8 +126,7 @@ jobs:
     - name: Create DMG File
       run: |
         brew install create-dmg
-        APP_PATH=$(find ./publish-mac -name "GenealogyDiffUtility.app" -type d | head -n 1)
-        echo "Found app bundle at: $APP_PATH"
+        
         create-dmg \
           --volname "GenealogyDiffUtility Setup" \
           --window-size 500 300 \
@@ -135,8 +134,8 @@ jobs:
           --icon "GenealogyDiffUtility.app" 175 120 \
           --app-drop-link 325 120 \
           "./GenealogyDiffUtility-${{ github.ref_name }}.dmg" \
-          "$APP_PATH"
-
+          "./publish-mac/net10.0/osx-x64/bundle/GenealogyDiffUtility.app"
+          
     - name: Upload macOS Artifact
       uses: actions/upload-artifact@v4
       with:
