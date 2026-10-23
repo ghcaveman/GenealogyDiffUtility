@@ -25,7 +25,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Include="..\LegacyExport_ToGramps_07152026.ged" Link="TestData\LegacyExport_ToGramps_07152026.ged">
+    <None Include="..\FamilyTreeTest.ged" Link="TestData\FamilyTreeTest.ged">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>

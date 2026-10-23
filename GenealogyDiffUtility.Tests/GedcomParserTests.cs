@@ -5,7 +5,7 @@ namespace GenealogyDiffUtility.Tests;
 
 public class GedcomParserTests
 {
-    private const string GedFileName = "LegacyExport_ToGramps_07152026.ged";
+    private const string GedFileName = "FamilyTreeTest.ged";
 
     private static string GedFilePath =>
         Path.Combine(AppContext.BaseDirectory, "TestData", GedFileName);
