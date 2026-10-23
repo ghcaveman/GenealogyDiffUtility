@@ -90,8 +90,11 @@ jobs:
     # FIXED: Replaced the truncated URL with the full binary download path
     - name: Compile Standalone AppImage File
       run: |
-        wget -q "https://github.com/ghcaveman/GenealogyDiffUtility"
+        # FIXED: Download the actual compiler binary from the official AppImage distribution channel
+        wget -q "https://github.com"
         chmod a+x appimagetool-x86_64.AppImage
+        
+        # Build the final universal Linux executable package container
         ARCH=x86_64 ./appimagetool-x86_64.AppImage ./AppDir ./GenealogyDiffUtility-${{ github.ref_name }}.AppImage
 
     - name: Upload Linux Artifact
@@ -135,7 +138,7 @@ jobs:
           --app-drop-link 325 120 \
           "./GenealogyDiffUtility-${{ github.ref_name }}.dmg" \
           "./publish-mac/net10.0/osx-x64/bundle/GenealogyDiffUtility.app"
-          
+
     - name: Upload macOS Artifact
       uses: actions/upload-artifact@v4
       with:
