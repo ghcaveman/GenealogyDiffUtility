@@ -87,9 +87,14 @@ jobs:
         EOF
         chmod +x AppDir/AppRun
 
-    # FIXED: Combined compiler download, permission adjustment, and FUSE-less unpacking to resolve workspace dependency crashes
-    - name: Download and Unpack AppImage Compiler Tool
-      run: wget -O appimagetool-x86_64.AppImage "https://github.com" && chmod a+x appimagetool-x86_64.AppImage && ./appimagetool-x86_64.AppImage --appimage-extract
+    - name: Download AppImage Compiler Binary
+      run: wget -O appimagetool-x86_64.AppImage "https://github.com"
+
+    - name: Adjust Permissions
+      run: chmod a+x appimagetool-x86_64.AppImage
+
+    - name: Unpack Compiler Structure
+      run: ./appimagetool-x86_64.AppImage --appimage-extract
 
     - name: Build Universal Linux AppImage Package
       run: |
