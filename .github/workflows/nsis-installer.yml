@@ -89,7 +89,7 @@ jobs:
 
     - name: Download and Unpack AppImage Compiler Tool
       run: |
-        wget -O appimagetool-x86_64.AppImage "https://github.com"
+        wget -O appimagetool-x86_64.AppImage "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage"
         chmod a+x appimagetool-x86_64.AppImage
         ./appimagetool-x86_64.AppImage --appimage-extract
 
