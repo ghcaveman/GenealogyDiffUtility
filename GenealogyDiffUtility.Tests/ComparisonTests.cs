@@ -161,10 +161,10 @@ public class ComparisonTests
         var dup = ParseText(DuplicateEvents);
 
         string report = TreeDiffGenerator.Generate(single, dup, includeDetails: true);
-        Assert.Contains("[EXTRA] Event: Marital Status - Married (duplicate)", report);
+        Assert.Contains("[EXTRA]     Event: Marital Status - Married (duplicate)", report);
 
         string reverse = TreeDiffGenerator.Generate(dup, single, includeDetails: true);
-        Assert.Contains("[MISSING] Event: Marital Status - Married (duplicate)", reverse);
+        Assert.Contains("[MISSING]   Event: Marital Status - Married (duplicate)", reverse);
     }
 
     [Fact]
@@ -176,7 +176,7 @@ public class ComparisonTests
         string report = TreeDiffGenerator.Generate(withEvent, withoutEvent, includeDetails: true);
         string heading = "  [DIFFERENT] " + withEvent.Individuals.Values.Single().DisplayName;
         int headingAt = report.IndexOf(heading, StringComparison.Ordinal);
-        int detailAt = report.IndexOf("[MISSING] Event: Marital Status - Married", StringComparison.Ordinal);
+        int detailAt = report.IndexOf("[MISSING]   Event: Marital Status - Married", StringComparison.Ordinal);
 
         Assert.True(headingAt >= 0, "expected a heading naming the individual");
         Assert.True(detailAt > headingAt, "expected the detail line under the heading");
@@ -188,8 +188,9 @@ public class ComparisonTests
         var a = ParseText(SingleEvent);
         var b = ParseText(SingleEvent);
 
-        string report = TreeDiffGenerator.Generate(a, b, includeDetails: true);
-        Assert.DoesNotContain("[DIFFERENT]", report);
+        string report = TreeDiffGenerator.Generate(a, b, includeDetails: true, out var summary);
+        Assert.DoesNotContain("  [DIFFERENT] ", report);
+        Assert.Equal(0, summary.Get("Individuals")!.Different);
     }
 
     [Fact]
@@ -209,6 +210,73 @@ public class ComparisonTests
         Assert.Equal(2, individuals.RecordDifferences);
         Assert.StartsWith("=== Summary ===", report);
         Assert.Contains("Individuals: 2 differences", report);
+    }
+
+    // Same person exported by two programs: one writes "1 DEAT Y" and no
+    // descriptions, the other leaves off the Y and adds generated descriptions
+    // ("Birth of Altimare, Carmine") as TYPE lines or EVEN values.
+    private const string FlagsNoDescriptions = Head +
+        "0 @I1@ INDI\n1 NAME Carmine /Altimare/\n" +
+        "1 BIRT\n2 DATE 1773\n2 PLAC Mangone, Cosenza, Calabria, Italia\n" +
+        "1 DEAT Y\n" +
+        "1 EVEN\n2 TYPE Alt. Birth\n2 DATE 10 JUL 1885\n2 PLAC Belsito\n0 TRLR\n";
+
+    private const string NoFlagsWithDescriptions = Head +
+        "0 @I7@ INDI\n1 NAME Carmine /Altimare/\n" +
+        "1 BIRT\n2 TYPE Birth of Altimare, Carmine\n2 DATE 1773\n2 PLAC Mangone, Cosenza, Calabria, Italia\n" +
+        "1 DEAT\n" +
+        "1 EVEN Alt. Birth of Altimare, Carmine\n2 TYPE Alt. Birth\n2 DATE 10 JUL 1885\n2 PLAC Belsito\n0 TRLR\n";
+
+    [Fact]
+    public void DetailedDiff_YFlagsAndGeneratedDescriptionsAreNotDifferences()
+    {
+        var left = ParseText(FlagsNoDescriptions);
+        var right = ParseText(NoFlagsWithDescriptions);
+
+        string report = TreeDiffGenerator.Generate(left, right, includeDetails: true, out var summary);
+
+        Assert.Equal(0, summary.DetailDifferences);
+        Assert.Equal(0, summary.RecordDifferences);
+        Assert.DoesNotContain("  [DIFFERENT] ", report);
+    }
+
+    [Fact]
+    public void DetailedDiff_EditedEventIsOneChangedLineShowingOnlyTheDifference()
+    {
+        // A residence whose place was refined in one file. (A birth isn't used
+        // because the birth date is part of how people are matched.)
+        var left = ParseText(Head + "0 @I1@ INDI\n1 NAME Mary /Rossi/\n1 RESI\n2 DATE 1930\n2 PLAC Genova\n0 TRLR\n");
+        var right = ParseText(Head + "0 @I1@ INDI\n1 NAME Mary /Rossi/\n1 RESI\n2 DATE 1930\n2 PLAC Genova, Liguria\n0 TRLR\n");
+
+        string report = TreeDiffGenerator.Generate(left, right, includeDetails: true, out var summary);
+
+        Assert.Contains("[CHANGED]   Event: Residence (1930) - Genova", report);
+        Assert.Contains("Place: left:  Genova", report);
+        Assert.Contains("right: Genova, Liguria", report);
+        Assert.DoesNotContain("Date:", report);
+        Assert.DoesNotContain("[MISSING]   Event", report);
+        Assert.DoesNotContain("[EXTRA]     Event", report);
+        Assert.Equal(1, summary.DetailDifferences);
+    }
+
+    [Fact]
+    public void Diff_KeyExplainsMissingAndExtraBySide()
+    {
+        var a = ParseText(SingleEvent);
+        string report = TreeDiffGenerator.Generate(a, a, includeDetails: false, out _, "left", "right", "a.ged", "b.ged");
+        Assert.Contains("[MISSING] = only in the left file (a.ged); [EXTRA] = only in the right file (b.ged)", report);
+    }
+
+    [Fact]
+    public void Diff_TagsArePaddedSoTextLinesUp()
+    {
+        var one = ParseText(Head + "0 @I1@ INDI\n1 NAME Ann /Doe/\n0 TRLR\n");
+        var two = ParseText(Head + "0 @I1@ INDI\n1 NAME Bea /Doe/\n0 TRLR\n");
+        string report = TreeDiffGenerator.Generate(one, two, includeDetails: false);
+
+        var missing = report.Split('\n').Single(l => l.Contains("[MISSING]") && l.Contains("Doe, Ann"));
+        var extra = report.Split('\n').Single(l => l.Contains("[EXTRA]") && l.Contains("Doe, Bea"));
+        Assert.Equal(missing.IndexOf("Doe,"), extra.IndexOf("Doe,"));
     }
 
     [Fact]
@@ -231,7 +299,7 @@ public class ComparisonTests
                                    "0 @I2@ INDI\n1 NAME John /Doe/\n1 BIRT\n2 DATE 1900\n0 TRLR\n");
 
         string report = TreeDiffGenerator.Generate(one, two, includeDetails: false);
-        Assert.Contains("[EXTRA] Doe, John (b. 01/01/1900) (duplicate)", report);
+        Assert.Contains("[EXTRA]     Doe, John (b. 01/01/1900) (duplicate)", report);
         Assert.Contains("Matches: 1 | Missing: 0 | Extra: 1", report);
     }
 

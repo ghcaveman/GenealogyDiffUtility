@@ -81,7 +81,8 @@ namespace GenealogyDiffUtility
             }
             else
             {
-                string report = TreeDiffGenerator.Generate(main.LeftTree.Context, main.RightTree.Context, options.IncludeDetails);
+                string report = TreeDiffGenerator.Generate(main.LeftTree.Context, main.RightTree.Context, options.IncludeDetails,
+                    out _, "left", "right", main.LeftTree.FileName, main.RightTree.FileName);
                 body = $"<pre class=\"diff\">{Encode(report)}</pre>";
             }
 

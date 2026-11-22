@@ -43,6 +43,10 @@ namespace GenealogyDiffUtility
 
         public MainWindowViewModel()
         {
+            // Which pane each tree is in, for the Diff report's wording
+            LeftTree.SideName = "left";
+            RightTree.SideName = "right";
+
             // Initial placeholder labels
             LeftTree.FileName = "No file selected...";
             RightTree.FileName = "No file selected...";

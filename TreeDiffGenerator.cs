@@ -53,8 +53,19 @@ namespace GenealogyDiffUtility
     {
         private sealed class Totals
         {
-            public int Matches, Missing, Extra;
+            public int Matches, Missing, Extra, Changed;
         }
+
+        // Every tag is padded to the width of the longest one ("[DIFFERENT]") so the
+        // text after the tags lines up from one line to the next.
+        private const int TagWidth = 11;
+        private const string RecordIndent = "  ";
+        private const string DetailIndent = "      ";
+
+        private static string Tag(string tag) => tag.PadRight(TagWidth) + " ";
+
+        // Where a [CHANGED] line's left/right values start: under the text after the tag.
+        private static readonly string ChangeIndent = new(' ', DetailIndent.Length + TagWidth + 1);
 
         /// <summary>
         /// The result of pairing two lists by key, counting copies.
@@ -118,10 +129,15 @@ namespace GenealogyDiffUtility
 
         /// <summary>
         /// Builds the report and also returns its difference counts, which the
-        /// window shows in the top bar.
+        /// window shows in the top bar. <paramref name="thisSide"/> and
+        /// <paramref name="otherSide"/> ("left", "right") and the file names are
+        /// used in the key at the top and on [CHANGED] lines.
         /// </summary>
-        public static string Generate(GedcomTreeContext thisCtx, GedcomTreeContext otherCtx, bool includeDetails, out DiffSummary summary)
+        public static string Generate(GedcomTreeContext thisCtx, GedcomTreeContext otherCtx, bool includeDetails,
+            out DiffSummary summary, string thisSide = "left", string otherSide = "right",
+            string? thisFileName = null, string? otherFileName = null)
         {
+            var sides = (This: thisSide, Other: otherSide);
             var sb = new StringBuilder();
             var totals = new Totals();
             summary = new DiffSummary { IncludesDetails = includeDetails };
@@ -131,7 +147,7 @@ namespace GenealogyDiffUtility
                 otherCtx.Individuals.Values.OrderBy(p => p.DisplayName).ThenBy(p => p.Id),
                 p => TreeNodeKeys.GetKey(p)!, p => p.DisplayName,
                 includeDetails
-                    ? (a, b) => AppendRecordDetails(sb, a.DisplayName, a.Events, b.Events, AllSources(a.SourceIds, a.Events, thisCtx), AllSources(b.SourceIds, b.Events, otherCtx), totals)
+                    ? (a, b) => AppendRecordDetails(sb, sides, a.DisplayName, a.Events, b.Events, AllSources(a.SourceIds, a.Events, thisCtx), AllSources(b.SourceIds, b.Events, otherCtx), totals)
                     : null,
                 includeDetails ? p => AppendRecordDetailsMissing(sb, p.Events, AllSources(p.SourceIds, p.Events, thisCtx), totals) : null);
 
@@ -140,7 +156,7 @@ namespace GenealogyDiffUtility
                 otherCtx.Families.Values.OrderBy(f => f.DisplayName).ThenBy(f => f.Id),
                 f => TreeNodeKeys.GetKey(f)!, f => f.DisplayName,
                 includeDetails
-                    ? (a, b) => AppendRecordDetails(sb, a.DisplayName, a.Events, b.Events, AllSources(a.SourceIds, a.Events, thisCtx), AllSources(b.SourceIds, b.Events, otherCtx), totals)
+                    ? (a, b) => AppendRecordDetails(sb, sides, a.DisplayName, a.Events, b.Events, AllSources(a.SourceIds, a.Events, thisCtx), AllSources(b.SourceIds, b.Events, otherCtx), totals)
                     : null,
                 includeDetails ? f => AppendRecordDetailsMissing(sb, f.Events, AllSources(f.SourceIds, f.Events, thisCtx), totals) : null);
 
@@ -167,9 +183,33 @@ namespace GenealogyDiffUtility
                 sb.AppendLine($"Matches: {totals.Matches} ({100.0 * totals.Matches / total:F1}%)");
                 sb.AppendLine($"Missing: {totals.Missing} ({100.0 * totals.Missing / total:F1}%)");
                 sb.AppendLine($"Extra: {totals.Extra} ({100.0 * totals.Extra / total:F1}%)");
+                if (includeDetails)
+                    sb.AppendLine($"Changed: {totals.Changed} ({100.0 * totals.Changed / total:F1}%)");
             }
 
-            return BuildSummaryBlock(summary) + sb.ToString();
+            return BuildSummaryBlock(summary) +
+                   BuildKey(includeDetails, FileLabel(thisSide, thisFileName), FileLabel(otherSide, otherFileName)) +
+                   sb.ToString();
+        }
+
+        /// <summary>
+        /// Explains the tags in terms of the two files, and what is not counted
+        /// as a difference.
+        /// </summary>
+        private static string FileLabel(string side, string? fileName) =>
+            string.IsNullOrWhiteSpace(fileName) ? $"the {side} file" : $"the {side} file ({fileName})";
+
+        private static string BuildKey(bool includeDetails, string thisLabel, string otherLabel)
+        {
+            var sb = new StringBuilder();
+            sb.Append($"Key: [MISSING] = only in {thisLabel}; [EXTRA] = only in {otherLabel}");
+            if (includeDetails)
+                sb.Append("; [CHANGED] = in both, but some values differ (both shown); [DIFFERENT] = a person or family in both whose events or sources differ");
+            sb.AppendLine(".");
+            if (includeDetails)
+                sb.AppendLine("Not counted as differences: case and spacing, a \"Y\" event flag vs. no value, and generated descriptions like \"Birth of <name>\".");
+            sb.AppendLine();
+            return sb.ToString();
         }
 
         /// <summary>
@@ -231,14 +271,14 @@ namespace GenealogyDiffUtility
                 }
                 else
                 {
-                    sb.AppendLine($"  [MISSING] {label(item)}{DuplicateNote(match.OtherKeys, key(item))}");
+                    sb.AppendLine($"{RecordIndent}{Tag("[MISSING]")}{label(item)}{DuplicateNote(match.OtherKeys, key(item))}");
                     missingDetails?.Invoke(item);
                 }
             }
 
             foreach (var item in match.Extra)
             {
-                sb.AppendLine($"  [EXTRA] {label(item)}{DuplicateNote(match.ThisKeys, key(item))}");
+                sb.AppendLine($"{RecordIndent}{Tag("[EXTRA]")}{label(item)}{DuplicateNote(match.ThisKeys, key(item))}");
             }
 
             counts.Matches = match.Matched.Count;
@@ -266,37 +306,144 @@ namespace GenealogyDiffUtility
         /// lines beneath it say which individual or family they belong to.
         /// Returns the number of detail differences found.
         /// </summary>
-        private static int AppendRecordDetails(StringBuilder sb, string label,
+        private static int AppendRecordDetails(StringBuilder sb, (string This, string Other) sides, string label,
             IEnumerable<GedcomEvent> thisEvents, IEnumerable<GedcomEvent> otherEvents,
             IEnumerable<SourceNode> thisSources, IEnumerable<SourceNode> otherSources, Totals totals)
         {
             var lines = new List<string>();
+            int differences = 0;
 
             var events = Match(thisEvents.Where(e => !e.IsInternal), otherEvents.Where(e => !e.IsInternal), EventKey);
-            foreach (var evt in events.Missing)
-                lines.Add($"      [MISSING] Event: {evt.DisplayName}{DuplicateNote(events.OtherKeys, EventKey(evt))}");
-            foreach (var evt in events.Extra)
-                lines.Add($"      [EXTRA] Event: {evt.DisplayName}{DuplicateNote(events.ThisKeys, EventKey(evt))}");
+
+            // An unmatched event on each side that is the same event with an edited
+            // value (e.g. a refined date) is reported once, as [CHANGED], with only
+            // the values that differ.
+            var changed = PairChangedEvents(events.Missing, events.Extra);
+            var changedThis = new HashSet<GedcomEvent>(changed.Select(c => c.This), ReferenceEqualityComparer.Instance);
+            var changedOther = new HashSet<GedcomEvent>(changed.Select(c => c.Other), ReferenceEqualityComparer.Instance);
+
+            foreach (var (a, b) in changed)
+            {
+                lines.Add($"{DetailIndent}{Tag("[CHANGED]")}Event: {a.DisplayName}");
+                lines.AddRange(DescribeChange(a, b, sides));
+                differences++;
+            }
+            foreach (var evt in events.Missing.Where(e => !changedThis.Contains(e)))
+            {
+                lines.Add($"{DetailIndent}{Tag("[MISSING]")}Event: {evt.DisplayName}{DuplicateNote(events.OtherKeys, EventKey(evt))}");
+                differences++;
+            }
+            foreach (var evt in events.Extra.Where(e => !changedOther.Contains(e)))
+            {
+                lines.Add($"{DetailIndent}{Tag("[EXTRA]")}Event: {evt.DisplayName}{DuplicateNote(events.ThisKeys, EventKey(evt))}");
+                differences++;
+            }
 
             var sources = Match(thisSources, otherSources, s => TreeNodeKeys.GetKey(s)!);
             foreach (var src in sources.Missing)
-                lines.Add($"      [MISSING] Source: {src.Title}{DuplicateNote(sources.OtherKeys, TreeNodeKeys.GetKey(src)!)}");
+            {
+                lines.Add($"{DetailIndent}{Tag("[MISSING]")}Source: {src.Title}{DuplicateNote(sources.OtherKeys, TreeNodeKeys.GetKey(src)!)}");
+                differences++;
+            }
             foreach (var src in sources.Extra)
-                lines.Add($"      [EXTRA] Source: {src.Title}{DuplicateNote(sources.ThisKeys, TreeNodeKeys.GetKey(src)!)}");
+            {
+                lines.Add($"{DetailIndent}{Tag("[EXTRA]")}Source: {src.Title}{DuplicateNote(sources.ThisKeys, TreeNodeKeys.GetKey(src)!)}");
+                differences++;
+            }
 
             if (lines.Count > 0)
             {
-                sb.AppendLine($"  [DIFFERENT] {label}");
+                sb.AppendLine($"{RecordIndent}{Tag("[DIFFERENT]")}{label}");
                 foreach (var line in lines)
                     sb.AppendLine(line);
             }
 
             totals.Matches += events.Matched.Count + sources.Matched.Count;
-            totals.Missing += events.Missing.Count + sources.Missing.Count;
-            totals.Extra += events.Extra.Count + sources.Extra.Count;
+            totals.Missing += events.Missing.Count - changed.Count + sources.Missing.Count;
+            totals.Extra += events.Extra.Count - changed.Count + sources.Extra.Count;
+            totals.Changed += changed.Count;
 
-            return lines.Count;
+            return differences;
         }
+
+        /// <summary>
+        /// Pairs an unmatched event on this side with one on the other side when
+        /// they look like the same event with an edited value: same kind of event
+        /// and the same date or the same place. Pairs agreeing on both come first.
+        /// </summary>
+        private static List<(GedcomEvent This, GedcomEvent Other)> PairChangedEvents(
+            List<GedcomEvent> thisOnly, List<GedcomEvent> otherOnly)
+        {
+            var pairs = new List<(GedcomEvent, GedcomEvent)>();
+            var used = new bool[otherOnly.Count];
+            var usedThis = new HashSet<GedcomEvent>(ReferenceEqualityComparer.Instance);
+
+            // Pass 1: same date and place; pass 2: same date; pass 3: same place.
+            for (int pass = 1; pass <= 3; pass++)
+            {
+                foreach (var a in thisOnly)
+                {
+                    if (usedThis.Contains(a)) continue;
+                    for (int i = 0; i < otherOnly.Count; i++)
+                    {
+                        if (used[i]) continue;
+                        var b = otherOnly[i];
+                        if (!SameKindOfEvent(a, b)) continue;
+
+                        bool sameDate = N(a.Date) == N(b.Date) && N(a.Date).Length > 0;
+                        bool samePlace = N(a.Place) == N(b.Place) && N(a.Place).Length > 0;
+                        bool ok = pass switch
+                        {
+                            1 => N(a.Date) == N(b.Date) && N(a.Place) == N(b.Place),
+                            2 => sameDate,
+                            _ => samePlace
+                        };
+                        if (!ok) continue;
+
+                        used[i] = true;
+                        usedThis.Add(a);
+                        pairs.Add((a, b));
+                        break;
+                    }
+                }
+            }
+
+            // Keep the order the events appear in this record.
+            return pairs.OrderBy(p => thisOnly.IndexOf(p.Item1)).ToList();
+        }
+
+        private static bool SameKindOfEvent(GedcomEvent a, GedcomEvent b) =>
+            a.Type == b.Type && (a.Type != "EVEN" || N(a.EventName) == N(b.EventName));
+
+        /// <summary>
+        /// One pair of left/right lines per value that differs between two events
+        /// reported as [CHANGED].
+        /// </summary>
+        private static IEnumerable<string> DescribeChange(GedcomEvent a, GedcomEvent b, (string This, string Other) sides)
+        {
+            // "left:" / "right:" padded to the same width so the two values line up
+            int sideWidth = Math.Max(sides.This.Length, sides.Other.Length) + 2;
+            string thisWord = (sides.This + ":").PadRight(sideWidth);
+            string otherWord = (sides.Other + ":").PadRight(sideWidth);
+
+            var fields = new (string Name, string This, string Other, bool Differs)[]
+            {
+                ("Date", a.Date, b.Date, N(a.Date) != N(b.Date)),
+                ("Place", a.Place, b.Place, N(a.Place) != N(b.Place)),
+                ("Type", a.SubType, b.SubType, N(EffectiveSubType(a)) != N(EffectiveSubType(b))),
+                ("Value", a.Data, b.Data, N(EffectiveData(a)) != N(EffectiveData(b))),
+            };
+
+            foreach (var f in fields.Where(f => f.Differs))
+            {
+                string name = (f.Name + ":").PadRight(7);
+                yield return $"{ChangeIndent}{name}{thisWord}{Shown(f.This)}";
+                yield return $"{ChangeIndent}{new string(' ', 7)}{otherWord}{Shown(f.Other)}";
+            }
+        }
+
+        private static string Shown(string value) =>
+            string.IsNullOrWhiteSpace(value) ? "(blank)" : value.Trim();
 
         private static void AppendRecordDetailsMissing(StringBuilder sb, IEnumerable<GedcomEvent> events,
             IEnumerable<SourceNode> sources, Totals totals)
@@ -304,12 +451,12 @@ namespace GenealogyDiffUtility
             foreach (var evt in events.Where(e => !e.IsInternal))
             {
                 totals.Missing++;
-                sb.AppendLine($"      [MISSING] Event: {evt.DisplayName}");
+                sb.AppendLine($"{DetailIndent}{Tag("[MISSING]")}Event: {evt.DisplayName}");
             }
             foreach (var src in sources)
             {
                 totals.Missing++;
-                sb.AppendLine($"      [MISSING] Source: {src.Title}");
+                sb.AppendLine($"{DetailIndent}{Tag("[MISSING]")}Source: {src.Title}");
             }
         }
 
@@ -333,7 +480,53 @@ namespace GenealogyDiffUtility
             return result;
         }
 
-        private static string EventKey(GedcomEvent e) =>
-            $"{e.Type}|{TreeNodeKeys.NormalizeName(e.SubType)}|{TreeNodeKeys.NormalizeName(e.Date)}|{TreeNodeKeys.NormalizeName(e.Place)}|{TreeNodeKeys.NormalizeName(e.Data)}";
+        /// <summary>
+        /// The identity of an event for matching. Values that mean the same thing
+        /// across programs are compared as equal: see <see cref="EffectiveData"/>
+        /// and <see cref="EffectiveSubType"/>.
+        /// </summary>
+        internal static string EventKey(GedcomEvent e) =>
+            $"{e.Type}|{N(EffectiveSubType(e))}|{N(e.Date)}|{N(e.Place)}|{N(EffectiveData(e))}";
+
+        /// <summary>
+        /// The event line's value, ignoring values that only restate the event:
+        /// "Y" (GEDCOM's "this event happened" flag, which some programs write
+        /// and others leave off) and a generated description such as
+        /// "Alt. Birth of Smith, John".
+        /// </summary>
+        internal static string EffectiveData(GedcomEvent e)
+        {
+            string data = e.Data.Trim();
+            if (data.Equals("Y", StringComparison.OrdinalIgnoreCase)) return string.Empty;
+            if (IsGeneratedDescription(data, e)) return string.Empty;
+            return data;
+        }
+
+        /// <summary>
+        /// The TYPE line, ignoring a generated description such as "Birth of
+        /// Smith, John" on a standard event. On a generic EVEN the TYPE is the
+        /// event's name and is always kept.
+        /// </summary>
+        internal static string EffectiveSubType(GedcomEvent e)
+        {
+            string subType = e.SubType.Trim();
+            if (e.Type != "EVEN" && IsGeneratedDescription(subType, e)) return string.Empty;
+            return subType;
+        }
+
+        /// <summary>
+        /// True for text of the form "&lt;event name&gt; of &lt;anything&gt;", e.g.
+        /// "Birth of Altimare, Carmine" on a birth, which some programs fill in
+        /// automatically from the event type and the person's name.
+        /// </summary>
+        private static bool IsGeneratedDescription(string value, GedcomEvent e)
+        {
+            if (value.Length == 0) return false;
+            string name = e.Type == "EVEN" ? e.SubType.Trim() : e.EventName;
+            if (name.Length == 0) return false;
+            return N(value).StartsWith(N(name) + " of ", StringComparison.Ordinal);
+        }
+
+        private static string N(string value) => TreeNodeKeys.NormalizeName(value);
     }
 }

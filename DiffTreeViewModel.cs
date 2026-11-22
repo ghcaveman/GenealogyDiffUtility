@@ -21,6 +21,12 @@ namespace GenealogyDiffUtility
         public DiffTreeViewModel? OtherTree { get; set; }
 
         /// <summary>
+        /// "left" or "right": which pane this tree is in. Used in the Diff report
+        /// to say which file a [MISSING] or [EXTRA] record comes from.
+        /// </summary>
+        public string SideName { get; set; } = "this";
+
+        /// <summary>
         /// Raised when the user selects or expands a node in this tree,
         /// so the other tree can follow to the equivalent node.
         /// </summary>
@@ -243,7 +249,8 @@ namespace GenealogyDiffUtility
                 return;
             }
 
-            DiffText = TreeDiffGenerator.Generate(_context, OtherTree._context, _showDetails, out var summary);
+            DiffText = TreeDiffGenerator.Generate(_context, OtherTree._context, _showDetails, out var summary,
+                SideName, OtherTree.SideName, FileName, OtherTree.FileName);
             DiffSummary = summary;
         }
 

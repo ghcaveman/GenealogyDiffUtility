@@ -49,6 +49,38 @@ namespace GenealogyDiffUtility
             (Type == "EVEN" && Data.StartsWith("http", StringComparison.OrdinalIgnoreCase));
 
         /// <summary>
+        /// The friendly event name, e.g. "Birth" for BIRT, or the TYPE value
+        /// ("Alt. Birth", "Military Draft Registration") for a generic EVEN.
+        /// </summary>
+        public string EventName =>
+            Type switch
+            {
+                "BIRT" => "Birth",
+                "DEAT" => "Death",
+                "BURI" => "Burial",
+                "BAPM" => "Baptism",
+                "MARR" => "Marriage",
+                "DIV" => "Divorce",
+                "CENS" => "Census",
+                "RESI" => "Residence",
+                "OCCU" => "Occupation",
+                "IMMI" => "Immigration",
+                "EMIG" => "Emigration",
+                "NATU" => "Naturalization",
+                "GRAD" => "Graduation",
+                "EDUC" => "Education",
+                "RETI" => "Retirement",
+                "PROB" => "Probate",
+                "WILL" => "Will",
+                "ADOP" => "Adoption",
+                "CHR" => "Christening",
+                "CREM" => "Cremation",
+                "CONF" => "Confirmation",
+                "EVEN" => !string.IsNullOrEmpty(SubType) ? SubType : (!string.IsNullOrEmpty(Data) ? Data : "Event"),
+                _ => Type
+            };
+
+        /// <summary>
         /// Formats the event for display in the details view, e.g.
         /// "Birth (3 MAR 1901) - Springfield, Ohio" or
         /// "Ethnicity - White".
@@ -57,34 +89,7 @@ namespace GenealogyDiffUtility
         {
             get
             {
-                string eventName = Type switch
-                {
-                    "BIRT" => "Birth",
-                    "DEAT" => "Death",
-                    "BURI" => "Burial",
-                    "BAPM" => "Baptism",
-                    "MARR" => "Marriage",
-                    "DIV" => "Divorce",
-                    "CENS" => "Census",
-                    "RESI" => "Residence",
-                    "OCCU" => "Occupation",
-                    "IMMI" => "Immigration",
-                    "EMIG" => "Emigration",
-                    "NATU" => "Naturalization",
-                    "GRAD" => "Graduation",
-                    "EDUC" => "Education",
-                    "RETI" => "Retirement",
-                    "PROB" => "Probate",
-                    "WILL" => "Will",
-                    "ADOP" => "Adoption",
-                    "CHR" => "Christening",
-                    "CREM" => "Cremation",
-                    "CONF" => "Confirmation",
-                    "EVEN" => !string.IsNullOrEmpty(SubType) ? SubType : (!string.IsNullOrEmpty(Data) ? Data : "Event"),
-                    _ => Type
-                };
-
-                string display = eventName;
+                string display = EventName;
                 if (!string.IsNullOrEmpty(Date))
                     display += $" ({Date})";
                 if (!string.IsNullOrEmpty(Place))
