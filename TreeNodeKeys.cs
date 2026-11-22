@@ -34,7 +34,8 @@ namespace GenealogyDiffUtility
         /// Primary key: normalized full name + birth date (this is unique in the
         /// sample data). For records without a birth date we fall back to the
         /// normalized name alone, qualified with a "#n" collision suffix when the
-        /// name is shared by multiple individuals in the same tree.
+        /// name is shared by multiple individuals in the same tree (see
+        /// <see cref="AssignCollisionIndices"/>).
         /// </para>
         /// </summary>
         private static string BuildPersonKey(IndividualNode person)
@@ -121,12 +122,126 @@ namespace GenealogyDiffUtility
         /// "24 AUG 1938" and "24 Aug 1938" should match; qualifiers such as
         /// "ABT" are kept so approximate vs exact dates are not conflated.
         /// </summary>
-        private static string NormalizeForKey(string value)
-        {
-            if (string.IsNullOrWhiteSpace(value)) return string.Empty;
+        internal static string NormalizeForKey(string value) => NormalizeName(value);
 
-            var parts = value.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
-            return string.Join(" ", parts).ToLowerInvariant();
+        /// <summary>
+        /// Numbers individuals who share a name and have no birth date, so their
+        /// keys stay unique ("john doe", "john doe#2", ...).
+        /// <para>
+        /// The numbering follows each person's content (death date, then parents,
+        /// spouses and children) rather than the GEDCOM record Id, because record
+        /// Ids differ between exports. People with more known facts sort first, so
+        /// when the other tree has only one person of that name, it pairs with the
+        /// best-documented one. The record Id only breaks ties between people whose
+        /// content is identical, where either pairing is equally valid.
+        /// </para>
+        /// </summary>
+        public static void AssignCollisionIndices(GedcomTreeContext context)
+        {
+            foreach (var person in context.Individuals.Values)
+            {
+                person.CollisionIndex = 1;
+            }
+
+            var groups = context.Individuals.Values
+                .Where(p => string.IsNullOrWhiteSpace(p.BirthDate))
+                .GroupBy(p => NormalizeName(p.FullName))
+                .Where(g => g.Count() > 1)
+                .ToList();
+            if (groups.Count == 0) return;
+
+            var signatures = new Dictionary<IndividualNode, string[]>();
+            foreach (var person in groups.SelectMany(g => g))
+            {
+                signatures[person] = BuildSignature(person, context);
+            }
+
+            foreach (var group in groups)
+            {
+                var ordered = group
+                    .OrderBy(p => signatures[p], SignatureComparer.Instance)
+                    .ThenBy(p => p.Id, StringComparer.Ordinal)
+                    .ToList();
+                for (int i = 0; i < ordered.Count; i++)
+                {
+                    ordered[i].CollisionIndex = i + 1;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Facts that tell same-named people apart, most decisive first:
+        /// death date, father, mother, spouses, children.
+        /// </summary>
+        private static string[] BuildSignature(IndividualNode person, GedcomTreeContext context)
+        {
+            string father = string.Empty, mother = string.Empty;
+            var spouses = new List<string>();
+            var children = new List<string>();
+
+            foreach (var family in context.Families.Values)
+            {
+                if (father.Length == 0 && mother.Length == 0 && family.ChildrenIds.Contains(person.Id))
+                {
+                    father = BasePersonKey(family.HusbandId, context);
+                    mother = BasePersonKey(family.WifeId, context);
+                }
+
+                bool isHusband = family.HusbandId == person.Id;
+                bool isWife = family.WifeId == person.Id;
+                if (!isHusband && !isWife) continue;
+
+                string spouse = BasePersonKey(isHusband ? family.WifeId : family.HusbandId, context);
+                if (spouse.Length > 0) spouses.Add(spouse);
+                children.AddRange(family.ChildrenIds
+                    .Select(id => BasePersonKey(id, context))
+                    .Where(k => k.Length > 0));
+            }
+
+            spouses.Sort(StringComparer.Ordinal);
+            children.Sort(StringComparer.Ordinal);
+            return new[]
+            {
+                NormalizeForKey(person.DeathDate),
+                father,
+                mother,
+                string.Join(";", spouses),
+                string.Join(";", children)
+            };
+        }
+
+        /// <summary>
+        /// Name plus birth date of a related person, without any collision suffix
+        /// (relatives' own suffixes may not be assigned yet).
+        /// </summary>
+        private static string BasePersonKey(string id, GedcomTreeContext context)
+        {
+            if (string.IsNullOrEmpty(id) || !context.Individuals.TryGetValue(id, out var p)) return string.Empty;
+            string name = NormalizeName(p.FullName);
+            string birth = NormalizeForKey(p.BirthDate);
+            return birth.Length > 0 ? $"{name}|{birth}" : name;
+        }
+
+        /// <summary>
+        /// Compares signatures field by field; a known value sorts before an
+        /// unknown (empty) one.
+        /// </summary>
+        private sealed class SignatureComparer : IComparer<string[]>
+        {
+            public static readonly SignatureComparer Instance = new();
+
+            public int Compare(string[]? x, string[]? y)
+            {
+                if (x == null || y == null) return x == null ? (y == null ? 0 : 1) : -1;
+                for (int i = 0; i < Math.Min(x.Length, y.Length); i++)
+                {
+                    bool xEmpty = x[i].Length == 0, yEmpty = y[i].Length == 0;
+                    if (xEmpty != yEmpty) return xEmpty ? 1 : -1;
+                    int c = string.CompareOrdinal(x[i], y[i]);
+                    if (c != 0) return c;
+                }
+                return x.Length.CompareTo(y.Length);
+            }
         }
 
         public static IEnumerable<object>? GetChildren(object? node)

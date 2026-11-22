@@ -17,6 +17,9 @@ namespace GenealogyDiffUtility
         // Pointers to notes attached to this family
         public List<string> NoteIds { get; set; } = new();
 
+        // Note text written directly on the record ("1 NOTE some text") rather than as a pointer
+        public List<string> InlineNotes { get; } = new();
+
         // Pointers to sources that prove this family exists
         public List<string> SourceIds { get; set; } = new();
 

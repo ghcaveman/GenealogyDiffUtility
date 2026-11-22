@@ -235,8 +235,8 @@ public class GedcomParserTests
         // Assert
         Assert.NotNull(context);
         Assert.True(context.Individuals.TryGetValue("@I1@", out var individual));
-        Assert.Equal("Dottie Lucas", individual.FullName);
-        Assert.Equal("Lucas", individual.LastName);
+        Assert.Equal("Halet Belwell", individual.FullName);
+        Assert.Equal("Belwell", individual.LastName);
         Assert.Equal("F", individual.Gender);
         Assert.Equal("24 Aug 1938", individual.BirthDate);
         Assert.Empty(individual.BirthPlace);
@@ -266,7 +266,9 @@ public class GedcomParserTests
         // Assert
         Assert.NotNull(context);
         Assert.True(context.Individuals.TryGetValue("@I500124@", out var individual));
-        Assert.Equal("Louis Pittaluga", individual.FullName);
+        // The first NAME line is the preferred name; the second is an alternate name
+        Assert.Equal("Toro Foxford", individual.FullName);
+        Assert.Contains("Irus Foxford", individual.AlternateNames);
         Assert.Single(individual.NoteIds);
         Assert.Equal("@NI500124@", individual.NoteIds[0]);
     }
@@ -302,13 +304,13 @@ public class GedcomParserTests
         Assert.Equal("@I3@", family.HusbandId);
         Assert.Equal("@I500256@", family.WifeId);
         Assert.Equal("6 May 1989", family.MarriageDate);
-        Assert.Equal("Austin, Texas", family.MarriagePlace);
+        Assert.Equal("Copperwick, Texas", family.MarriagePlace);
 
         // The marriage should also be recorded as an event
         Assert.Single(family.Events);
         Assert.Equal("MARR", family.Events[0].Type);
         Assert.Equal("6 May 1989", family.Events[0].Date);
-        Assert.Equal("Austin, Texas", family.Events[0].Place);
+        Assert.Equal("Copperwick, Texas", family.Events[0].Place);
     }
 
     [Fact]
@@ -351,11 +353,11 @@ public class GedcomParserTests
         // Assert
         Assert.NotNull(context);
         Assert.True(context.Notes.TryGetValue("@BI476@", out var note1));
-        Assert.Equal("Birth type:Illinios, United States", note1.Text);
+        Assert.Equal("Sample note text 2.", note1.Text);
         Assert.True(context.Notes.TryGetValue("@DI500124@", out var note2));
-        Assert.Equal("Passed away exactly on his 83rd birthday.", note2.Text);
+        Assert.Equal("Sample note text 4.", note2.Text);
         Assert.True(context.Notes.TryGetValue("@XI500124@", out var note3));
-        Assert.Equal("Entombment located in Mausoleum 2 (Outside), side-by-side with his wife Angelina.", note3.Text);
+        Assert.Equal("Sample note text 5.", note3.Text);
     }
 
     [Fact]

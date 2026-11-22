@@ -1,6 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
+using System.Text;
 
 namespace GenealogyDiffUtility
 {
@@ -19,337 +21,498 @@ namespace GenealogyDiffUtility
             "EVEN"
         };
 
-        public static GedcomTreeContext Parse(string filePath)
+        // Tags whose values are free text. Their trailing whitespace is kept while
+        // parsing because a following CONC line continues the text directly, so a
+        // trailing space can be the only separator between two words.
+        private static readonly HashSet<string> TextTags = new(StringComparer.Ordinal)
         {
-            return ParseFile(filePath);
+            "NOTE", "CONC", "CONT", "TITL", "AUTH", "PUBL", "TEXT", "ADDR", "ADR1", "ADR2", "ADR3"
+        };
+
+        static GedcomParser()
+        {
+            // Makes Windows-1252 (GEDCOM "ANSI") available on .NET.
+            Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
         }
 
-        private static GedcomTreeContext ParseFile(string filePath)
+        /// <summary>
+        /// A free-text value that later CONC/CONT lines (one level deeper) continue.
+        /// </summary>
+        private sealed class TextTarget
+        {
+            public int Level;
+            public Func<string> Get = () => string.Empty;
+            public Action<string> Set = _ => { };
+            public string ContSeparator = "\n";
+        }
+
+        public static GedcomTreeContext Parse(string filePath)
+        {
+            if (!File.Exists(filePath)) return new GedcomTreeContext();
+            return ParseLines(File.ReadLines(filePath, DetectEncoding(filePath)));
+        }
+
+        /// <summary>
+        /// Picks the text encoding for a GEDCOM file: a byte-order mark wins,
+        /// otherwise the header's CHAR value. UTF-8 is the default.
+        /// ANSEL has no .NET decoder, so it is read as Windows-1252, which is
+        /// correct for plain ASCII text but not for ANSEL's accented characters.
+        /// </summary>
+        public static Encoding DetectEncoding(string filePath)
+        {
+            byte[] head = new byte[4096];
+            int read;
+            using (var fs = File.OpenRead(filePath))
+            {
+                read = fs.Read(head, 0, head.Length);
+            }
+
+            if (read >= 3 && head[0] == 0xEF && head[1] == 0xBB && head[2] == 0xBF) return new UTF8Encoding(false);
+            if (read >= 2 && head[0] == 0xFF && head[1] == 0xFE) return Encoding.Unicode;
+            if (read >= 2 && head[0] == 0xFE && head[1] == 0xFF) return Encoding.BigEndianUnicode;
+
+            string text = Encoding.Latin1.GetString(head, 0, read);
+            foreach (var rawLine in text.Split('\n'))
+            {
+                string line = rawLine.Trim();
+                if (line.StartsWith("0 ") && !line.StartsWith("0 HEAD")) break; // past the header
+                if (!line.StartsWith("1 CHAR", StringComparison.Ordinal)) continue;
+
+                string charset = line.Substring(6).Trim().ToUpperInvariant();
+                return charset switch
+                {
+                    "ANSI" or "ASCII" or "IBMPC" or "IBM WINDOWS" or "ANSEL" => Encoding.GetEncoding(1252),
+                    "UNICODE" => Encoding.Unicode,
+                    _ => new UTF8Encoding(false)
+                };
+            }
+            return new UTF8Encoding(false);
+        }
+
+        internal static GedcomTreeContext ParseLines(IEnumerable<string> lines)
         {
             var context = new GedcomTreeContext();
-            if (!File.Exists(filePath)) return context;
 
             IndividualNode? currentIndividual = null;
             FamilyNode? currentFamily = null;
             SourceNode? currentSource = null;
             RepositoryNode? currentRepository = null;
             NoteNode? currentNote = null;
-            string currentSection = "";
-            string currentRepoField = ""; // Tracks which field (NAME/ADDR) a CONC line belongs to
             GedcomEvent? currentEvent = null;
+            TextTarget? text = null;
+            string currentSection = "";
+            bool hasPrimaryName = false;
 
             // Sub-context flags specifically for the Header block
             bool insideHeadSour = false;
             bool insideHeadGedc = false;
 
-            using (var reader = new StreamReader(filePath))
+            foreach (string rawLine in lines)
             {
-                string? line;
-                while ((line = reader.ReadLine()) != null)
+                // Leading whitespace is not significant; trailing whitespace can be
+                // (see TextTags), so only line terminators are removed from the end.
+                string line = rawLine.TrimStart().TrimEnd('\r', '\n');
+                if (string.IsNullOrWhiteSpace(line)) continue;
+
+                string[] parts = line.Split(' ', 3);
+                if (parts.Length < 2) continue;
+                if (!int.TryParse(parts[0], NumberStyles.None, CultureInfo.InvariantCulture, out int level)) continue;
+
+                string tag = parts[1].Trim();
+                string data = parts.Length > 2 ? parts[2] : string.Empty;
+                // Level-0 lines keep their raw value too: "0 @N1@ NOTE text" carries note text.
+                if (level != 0 && !TextTags.Contains(tag)) data = data.Trim();
+
+                // CONC/CONT continue the text value of the line directly above them.
+                if ((tag == "CONC" || tag == "CONT") && text != null && level == text.Level + 1)
                 {
-                    string trimmed = line.Trim();
-                    if (string.IsNullOrWhiteSpace(trimmed)) continue;
+                    text.Set(text.Get() + (tag == "CONT" ? text.ContSeparator : string.Empty) + data);
+                    continue;
+                }
+                text = null;
 
-                    string[] parts = trimmed.Split(' ', 3);
-                    if (parts.Length < 2) continue;
+                if (level == 0)
+                {
+                    currentIndividual = null;
+                    currentFamily = null;
+                    currentSource = null;
+                    currentRepository = null;
+                    currentNote = null;
+                    currentEvent = null;
+                    hasPrimaryName = false;
+                    insideHeadSour = false;
+                    insideHeadGedc = false;
 
-                    string level = parts[0];
-
-                    if (level == "0")
+                    if (!tag.StartsWith("@"))
                     {
-                        currentIndividual = null;
-                        currentFamily = null;
-                        currentSource = null;
-                        currentRepository = null;
-                        currentNote = null;
-                        currentEvent = null;
-                        currentRepoField = "";
-                        insideHeadSour = false;
-                        insideHeadGedc = false;
-
-                        if (parts.Length == 2)
-                        {
-                            currentSection = parts[1];
-                            continue;
-                        }
-
-                        string id = parts[1];
-                        string type = parts[2];
-
-                        if (type == "INDI")
-                        {
-                            currentSection = "INDI";
-                            currentIndividual = new IndividualNode { Id = id };
-                            context.Individuals[id] = currentIndividual;
-                        }
-                        else if (type == "FAM")
-                        {
-                            currentSection = "FAM";
-                            currentFamily = new FamilyNode { Id = id };
-                            context.Families[id] = currentFamily;
-                        }
-                        else if (type == "SOUR")
-                        {
-                            currentSection = "SOUR";
-                            currentSource = new SourceNode { Id = id };
-                            context.Sources[id] = currentSource;
-                        }
-                        else if (type == "REPO")
-                        {
-                            currentSection = "REPO";
-                            currentRepository = new RepositoryNode { Id = id };
-                            context.Repositories[id] = currentRepository;
-                        }
-                        else if (type.StartsWith("NOTE"))
-                        {
-                            currentSection = "NOTE";
-                            currentNote = new NoteNode { Id = id };
-                            context.Notes[id] = currentNote;
-
-                            // Extract the text portion that follows "NOTE" on the same line
-                            if (type.Length > 4)
-                            {
-                                string text = type.Substring(4).TrimStart();
-                                if (!string.IsNullOrEmpty(text))
-                                    currentNote.Text = text;
-                            }
-                        }
+                        // e.g. "0 HEAD", "0 TRLR"
+                        currentSection = tag;
                         continue;
                     }
 
-                    string tag = parts[1];
-                    string data = parts.Length > 2 ? parts[2] : string.Empty;
+                    string id = tag;
+                    string rest = data.TrimStart();
+                    string type = rest.Trim().Split(' ', 2)[0];
+                    currentSection = type;
 
-                    // --- HEADER PARSING SYSTEM ---
-                    if (currentSection == "HEAD")
+                    switch (type)
                     {
-                        if (level == "1")
-                        {
-                            // Reset level 1 flags when changing sub-structures
-                            insideHeadSour = (tag == "SOUR");
-                            insideHeadGedc = (tag == "GEDC");
+                        case "INDI":
+                            currentIndividual = new IndividualNode { Id = id };
+                            context.Individuals[id] = currentIndividual;
+                            break;
+                        case "FAM":
+                            currentFamily = new FamilyNode { Id = id };
+                            context.Families[id] = currentFamily;
+                            break;
+                        case "SOUR":
+                            currentSource = new SourceNode { Id = id };
+                            context.Sources[id] = currentSource;
+                            break;
+                        case "REPO":
+                            currentRepository = new RepositoryNode { Id = id };
+                            context.Repositories[id] = currentRepository;
+                            break;
+                        case "NOTE":
+                            var note = new NoteNode { Id = id };
+                            currentNote = note;
+                            context.Notes[id] = note;
 
-                            if (tag == "CHAR")
-                                context.Header.CharacterEncoding = data;
-                            else if (tag == "DATE")
-                            {
-                                if (DateTime.TryParse(data, out DateTime parsedDate))
-                                    context.Header.FileCreationDate = parsedDate;
-                            }
-                        }
-                        else if (level == "2")
-                        {
-                            if (insideHeadSour && tag == "VERS")
-                                context.Header.SoftwareVersion = data;
-                            else if (insideHeadGedc && tag == "VERS")
-                                context.Header.GedcomVersion = data;
-                        }
+                            // The text portion that follows "NOTE" on the same line
+                            int noteAt = rest.IndexOf("NOTE", StringComparison.Ordinal);
+                            string noteText = rest.Substring(noteAt + 4);
+                            if (noteText.StartsWith(" ")) noteText = noteText.Substring(1);
+                            note.Text = noteText;
+                            text = new TextTarget { Level = 0, Get = () => note.Text, Set = v => note.Text = v };
+                            break;
+                    }
+                    continue;
+                }
 
-                        if (insideHeadSour && level == "1")
-                            context.Header.SourceSoftware = data;
-                    }
+                switch (currentSection)
+                {
+                    case "HEAD":
+                        ParseHeaderLine(context.Header, level, tag, data, ref insideHeadSour, ref insideHeadGedc);
+                        break;
 
-                    // --- INDIVIDUALS PARSING SYSTEM ---
-                    else if (currentSection == "INDI" && currentIndividual != null)
-                    {
-                        ProcessIndividualTag(currentIndividual, tag, data, ref currentSection, ref currentEvent);
-                    }
-                    else if (currentSection == "INDI_EVENT" && currentIndividual != null && currentEvent != null)
-                    {
-                        if (level == "1")
-                        {
-                            // Stepped out of event back to INDI — process this line as INDI-level
-                            currentSection = "INDI";
-                            currentEvent = null;
-                            ProcessIndividualTag(currentIndividual, tag, data, ref currentSection, ref currentEvent);
-                        }
-                        else if (tag == "DATE")
-                        {
-                            currentEvent.Date = data;
-                            if (currentEvent.Type == "BIRT") currentIndividual.BirthDate = data;
-                            else if (currentEvent.Type == "DEAT") currentIndividual.DeathDate = data;
-                        }
-                        else if (tag == "PLAC")
-                        {
-                            currentEvent.Place = data;
-                            if (currentEvent.Type == "BIRT") currentIndividual.BirthPlace = data;
-                            else if (currentEvent.Type == "DEAT") currentIndividual.DeathPlace = data;
-                        }
-                        else if (tag == "TYPE") currentEvent.SubType = data;
-                        else if (tag == "SOUR") AddSourceAssociation(currentEvent.SourceIds, data);
-                        else if (tag == "NOTE") AddNoteAssociation(currentEvent.NoteIds, data);
-                    }
+                    case "INDI" when currentIndividual != null:
+                        text = ParseIndividualLine(currentIndividual, level, tag, data, ref currentEvent, ref hasPrimaryName);
+                        break;
 
-                    // --- FAMILIES PARSING SYSTEM ---
-                    else if (currentSection == "FAM" && currentFamily != null)
-                    {
-                        ProcessFamilyTag(currentFamily, tag, data, ref currentSection, ref currentEvent);
-                    }
-                    else if (currentSection == "FAM_EVENT" && currentFamily != null && currentEvent != null)
-                    {
-                        if (level == "1")
-                        {
-                            // Stepped out of event back to FAM — process this line as FAM-level
-                            currentSection = "FAM";
-                            currentEvent = null;
-                            ProcessFamilyTag(currentFamily, tag, data, ref currentSection, ref currentEvent);
-                        }
-                        else if (tag == "DATE")
-                        {
-                            currentEvent.Date = data;
-                            if (currentEvent.Type == "MARR") currentFamily.MarriageDate = data;
-                        }
-                        else if (tag == "PLAC")
-                        {
-                            currentEvent.Place = data;
-                            if (currentEvent.Type == "MARR") currentFamily.MarriagePlace = data;
-                        }
-                        else if (tag == "TYPE") currentEvent.SubType = data;
-                        else if (tag == "SOUR") AddSourceAssociation(currentEvent.SourceIds, data);
-                        else if (tag == "NOTE") AddNoteAssociation(currentEvent.NoteIds, data);
-                    }
+                    case "FAM" when currentFamily != null:
+                        text = ParseFamilyLine(currentFamily, level, tag, data, ref currentEvent);
+                        break;
 
-                    // --- SOURCES PARSING SYSTEM ---
-                    else if (currentSection == "SOUR" && currentSource != null)
-                    {
-                        if (tag == "TITL") currentSource.Title = data;
-                        else if (tag == "AUTH") currentSource.Author = data;
-                        else if (tag == "REPO") currentSource.RepositoryId = data;
-                        else if (tag == "NOTE")
-                        {
-                            AddNoteAssociation(currentSource.NoteIds, data);
-                        }
-                    }
+                    case "SOUR" when currentSource != null:
+                        text = ParseSourceLine(currentSource, level, tag, data);
+                        break;
 
-                    // --- REPOSITORIES PARSING SYSTEM ---
-                    else if (currentSection == "REPO" && currentRepository != null)
-                    {
-                        if (level == "1" && tag == "NAME")
-                        {
-                            currentRepository.Name = data;
-                            currentRepoField = "NAME";
-                        }
-                        else if (level == "1" && tag == "ADDR")
-                        {
-                            currentRepository.Address = data;
-                            currentRepoField = "ADDR";
-                        }
-                        else if (level == "1" && tag == "NOTE")
-                        {
-                            AddNoteAssociation(currentRepository.NoteIds, data);
-                        }
-                        else if (level == "2" && tag == "CONC")
-                        {
-                            if (currentRepoField == "NAME")
-                                currentRepository.Name += data;
-                            else if (currentRepoField == "ADDR")
-                                currentRepository.Address += data;
-                        }
-                        else if (level == "2" && tag == "ADR1")
-                        {
-                            if (!string.IsNullOrEmpty(currentRepository.Address))
-                                currentRepository.Address += " " + data;
-                            else
-                                currentRepository.Address = data;
-                        }
-                        else if (level == "3" && tag == "CONC")
-                        {
-                            // Level 3 CONC under ADR1 also belongs to the address
-                            currentRepository.Address += data;
-                        }
-                    }
-
-                    // --- NOTES PARSING SYSTEM ---
-                    else if (currentSection == "NOTE" && currentNote != null)
-                    {
-                        if (tag == "CONC")
-                        {
-                            // CONC concatenates directly without a separator
-                            currentNote.Text += data;
-                        }
-                        else if (tag == "CONT")
-                        {
-                            // CONT starts a new line
-                            currentNote.Text += "\n" + data;
-                        }
-                    }
+                    case "REPO" when currentRepository != null:
+                        text = ParseRepositoryLine(currentRepository, level, tag, data);
+                        break;
                 }
             }
+
+            TrimTextFields(context);
             return context;
         }
 
-        /// <summary>
-        /// Processes a level-1 tag within an individual record. Handles name, sex,
-        /// event tags (which create a new <see cref="GedcomEvent"/> and switch to
-        /// the event sub-section), and source/note associations.
-        /// </summary>
-        private static void ProcessIndividualTag(IndividualNode person, string tag, string data,
-            ref string currentSection, ref GedcomEvent? currentEvent)
+        private static void ParseHeaderLine(GedcomHeader header, int level, string tag, string data,
+            ref bool insideHeadSour, ref bool insideHeadGedc)
         {
-            if (tag == "NAME")
+            if (level == 1)
             {
-                person.FullName = data.Replace("/", "").Trim();
-                if (data.Contains("/"))
+                // Reset level 1 flags when changing sub-structures
+                insideHeadSour = tag == "SOUR";
+                insideHeadGedc = tag == "GEDC";
+
+                if (tag == "SOUR")
+                    header.SourceSoftware = data;
+                else if (tag == "CHAR")
+                    header.CharacterEncoding = data;
+                else if (tag == "DATE" && TryParseGedcomDate(data, out DateTime parsedDate))
+                    header.FileCreationDate = parsedDate;
+            }
+            else if (level == 2 && tag == "VERS")
+            {
+                if (insideHeadSour) header.SoftwareVersion = data;
+                else if (insideHeadGedc) header.GedcomVersion = data;
+            }
+        }
+
+        /// <summary>
+        /// Parses an exact GEDCOM date such as "15 JUL 2026" independently of the
+        /// machine's regional settings.
+        /// </summary>
+        internal static bool TryParseGedcomDate(string value, out DateTime date)
+        {
+            return DateTime.TryParseExact(value.Trim(), new[] { "d MMM yyyy", "dd MMM yyyy" },
+                       CultureInfo.InvariantCulture, DateTimeStyles.AllowWhiteSpaces, out date) ||
+                   DateTime.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.AllowWhiteSpaces, out date);
+        }
+
+        /// <summary>
+        /// Handles one line inside an INDI record. Returns the text target that
+        /// CONC/CONT lines following this line should continue, if any.
+        /// </summary>
+        private static TextTarget? ParseIndividualLine(IndividualNode person, int level, string tag, string data,
+            ref GedcomEvent? currentEvent, ref bool hasPrimaryName)
+        {
+            if (level == 1)
+            {
+                currentEvent = null;
+
+                if (tag == "NAME")
                 {
-                    int start = data.IndexOf('/') + 1;
-                    int end = data.LastIndexOf('/');
-                    if (end > start)
-                        person.LastName = data.Substring(start, end - start).Trim();
+                    string cleaned = CleanName(data);
+                    if (!hasPrimaryName)
+                    {
+                        // GEDCOM lists the preferred name first; later NAME lines
+                        // are alternate names (married names, AKAs, translations).
+                        hasPrimaryName = true;
+                        person.FullName = cleaned;
+                        person.LastName = ExtractSurname(data);
+                        if (string.IsNullOrEmpty(person.LastName))
+                            person.LastName = "Unknown";
+                    }
+                    else if (cleaned.Length > 0)
+                    {
+                        person.AlternateNames.Add(cleaned);
+                    }
                 }
-                if (string.IsNullOrEmpty(person.LastName))
-                    person.LastName = "Unknown";
+                else if (tag == "SEX") person.Gender = data;
+                else if (EventTags.Contains(tag))
+                {
+                    currentEvent = new GedcomEvent { Type = tag, Data = data.Trim() };
+                    person.Events.Add(currentEvent);
+                }
+                else if (tag == "SOUR") AddPointer(person.SourceIds, data);
+                else if (tag == "NOTE") return AddNote(person.NoteIds, person.InlineNotes, data, level);
+                return null;
             }
-            else if (tag == "SEX") person.Gender = data;
-            else if (EventTags.Contains(tag))
+
+            if (currentEvent != null)
+                return ParseEventLine(currentEvent, level, tag, data, person);
+
+            // Pointers nested under other level-1 structures (e.g. a citation under
+            // NAME) still belong to the person.
+            if (tag == "SOUR") AddPointer(person.SourceIds, data);
+            else if (tag == "NOTE") AddPointer(person.NoteIds, data);
+            return null;
+        }
+
+        /// <summary>
+        /// Handles one line inside a FAM record. Returns the text target that
+        /// CONC/CONT lines following this line should continue, if any.
+        /// </summary>
+        private static TextTarget? ParseFamilyLine(FamilyNode family, int level, string tag, string data,
+            ref GedcomEvent? currentEvent)
+        {
+            if (level == 1)
             {
-                currentEvent = new GedcomEvent { Type = tag, Data = data };
-                person.Events.Add(currentEvent);
-                currentSection = "INDI_EVENT";
+                currentEvent = null;
+
+                if (tag == "HUSB") family.HusbandId = data;
+                else if (tag == "WIFE") family.WifeId = data;
+                else if (tag == "CHIL") family.ChildrenIds.Add(data);
+                else if (EventTags.Contains(tag))
+                {
+                    currentEvent = new GedcomEvent { Type = tag, Data = data.Trim() };
+                    family.Events.Add(currentEvent);
+                }
+                else if (tag == "SOUR") AddPointer(family.SourceIds, data);
+                else if (tag == "NOTE") return AddNote(family.NoteIds, family.InlineNotes, data, level);
+                return null;
             }
-            else if (tag == "SOUR") AddSourceAssociation(person.SourceIds, data);
-            else if (tag == "NOTE") AddNoteAssociation(person.NoteIds, data);
+
+            if (currentEvent != null)
+                return ParseEventLine(currentEvent, level, tag, data, family);
+
+            if (tag == "SOUR") AddPointer(family.SourceIds, data);
+            else if (tag == "NOTE") AddPointer(family.NoteIds, data);
+            return null;
         }
 
         /// <summary>
-        /// Processes a level-1 tag within a family record. Handles spouse/child
-        /// references, event tags (which create a new <see cref="GedcomEvent"/> and
-        /// switch to the event sub-section), and source/note associations.
+        /// Handles a line below a level-1 event. Only level-2 DATE/PLAC/TYPE belong
+        /// to the event itself; deeper ones (e.g. a citation's "4 DATE") describe
+        /// sub-structures and must not overwrite the event's own values.
         /// </summary>
-        private static void ProcessFamilyTag(FamilyNode family, string tag, string data,
-            ref string currentSection, ref GedcomEvent? currentEvent)
+        private static TextTarget? ParseEventLine(GedcomEvent evt, int level, string tag, string data, object owner)
         {
-            if (tag == "HUSB") family.HusbandId = data;
-            else if (tag == "WIFE") family.WifeId = data;
-            else if (tag == "CHIL") family.ChildrenIds.Add(data);
-            else if (EventTags.Contains(tag))
+            if (level == 2)
             {
-                currentEvent = new GedcomEvent { Type = tag, Data = data };
-                family.Events.Add(currentEvent);
-                currentSection = "FAM_EVENT";
+                if (tag == "DATE")
+                {
+                    evt.Date = data;
+                    if (owner is IndividualNode p)
+                    {
+                        if (evt.Type == "BIRT" && p.BirthDate.Length == 0) p.BirthDate = data;
+                        else if (evt.Type == "DEAT" && p.DeathDate.Length == 0) p.DeathDate = data;
+                    }
+                    else if (owner is FamilyNode f && evt.Type == "MARR" && f.MarriageDate.Length == 0)
+                    {
+                        f.MarriageDate = data;
+                    }
+                }
+                else if (tag == "PLAC")
+                {
+                    evt.Place = data;
+                    if (owner is IndividualNode p)
+                    {
+                        if (evt.Type == "BIRT" && p.BirthPlace.Length == 0) p.BirthPlace = data;
+                        else if (evt.Type == "DEAT" && p.DeathPlace.Length == 0) p.DeathPlace = data;
+                    }
+                    else if (owner is FamilyNode f && evt.Type == "MARR" && f.MarriagePlace.Length == 0)
+                    {
+                        f.MarriagePlace = data;
+                    }
+                }
+                else if (tag == "TYPE") evt.SubType = data;
+                else if (tag == "SOUR") AddPointer(evt.SourceIds, data);
+                else if (tag == "NOTE") return AddNote(evt.NoteIds, evt.InlineNotes, data, level);
+                return null;
             }
-            else if (tag == "SOUR") AddSourceAssociation(family.SourceIds, data);
-            else if (tag == "NOTE") AddNoteAssociation(family.NoteIds, data);
+
+            // Deeper pointers (e.g. a note on the event's citation) still relate to the event
+            if (tag == "SOUR") AddPointer(evt.SourceIds, data);
+            else if (tag == "NOTE") AddPointer(evt.NoteIds, data);
+            return null;
+        }
+
+        private static TextTarget? ParseSourceLine(SourceNode source, int level, string tag, string data)
+        {
+            if (level == 1)
+            {
+                switch (tag)
+                {
+                    case "TITL":
+                        source.Title = data;
+                        return new TextTarget { Level = 1, Get = () => source.Title, Set = v => source.Title = v };
+                    case "AUTH":
+                        source.Author = data;
+                        return new TextTarget { Level = 1, Get = () => source.Author, Set = v => source.Author = v };
+                    case "PUBL":
+                        source.PublicationInfo = data;
+                        return new TextTarget { Level = 1, Get = () => source.PublicationInfo, Set = v => source.PublicationInfo = v };
+                    case "REPO":
+                        source.RepositoryId = data.Trim();
+                        return null;
+                    case "NOTE":
+                        return AddNote(source.NoteIds, source.InlineNotes, data, level);
+                }
+                return null;
+            }
+
+            if (tag == "NOTE") AddPointer(source.NoteIds, data);
+            return null;
+        }
+
+        private static TextTarget? ParseRepositoryLine(RepositoryNode repo, int level, string tag, string data)
+        {
+            if (level == 1)
+            {
+                switch (tag)
+                {
+                    case "NAME":
+                        repo.Name = data.Trim();
+                        return new TextTarget { Level = 1, Get = () => repo.Name, Set = v => repo.Name = v };
+                    case "ADDR":
+                        repo.Address = data;
+                        return new TextTarget { Level = 1, Get = () => repo.Address, Set = v => repo.Address = v, ContSeparator = ", " };
+                    case "NOTE":
+                        AddPointer(repo.NoteIds, data);
+                        return null;
+                }
+                return null;
+            }
+
+            if (level == 2 && tag == "ADR1")
+            {
+                repo.Address = string.IsNullOrEmpty(repo.Address) ? data : repo.Address.TrimEnd() + " " + data;
+                return new TextTarget { Level = 2, Get = () => repo.Address, Set = v => repo.Address = v, ContSeparator = ", " };
+            }
+            return null;
         }
 
         /// <summary>
-        /// Adds a note cross-reference ID (e.g., "@N1@") to an association list.
-        /// Ignores inline note text since only pointer references are tracked here.
+        /// Records a NOTE line: a pointer ("@N1@") goes in the pointer list, any
+        /// other value is inline note text whose CONC/CONT lines are joined to it.
         /// </summary>
-        private static void AddNoteAssociation(List<string> noteIds, string data)
+        private static TextTarget? AddNote(List<string> noteIds, List<string> inlineNotes, string data, int level)
         {
-            if (string.IsNullOrWhiteSpace(data)) return;
-            if (data.StartsWith("@") && data.EndsWith("@"))
-                noteIds.Add(data);
+            string trimmed = data.Trim();
+            if (trimmed.StartsWith("@") && trimmed.EndsWith("@"))
+            {
+                noteIds.Add(trimmed);
+                return null;
+            }
+
+            int index = inlineNotes.Count;
+            inlineNotes.Add(data);
+            return new TextTarget { Level = level, Get = () => inlineNotes[index], Set = v => inlineNotes[index] = v };
         }
 
         /// <summary>
-        /// Adds a source cross-reference ID (e.g., "@S1@") to an association list.
+        /// Adds a cross-reference pointer (e.g., "@S1@") to a list; other values are ignored.
         /// </summary>
-        private static void AddSourceAssociation(List<string> sourceIds, string data)
+        private static void AddPointer(List<string> ids, string data)
         {
-            if (string.IsNullOrWhiteSpace(data)) return;
-            if (data.StartsWith("@") && data.EndsWith("@"))
-                sourceIds.Add(data);
+            string trimmed = data.Trim();
+            if (trimmed.Length > 1 && trimmed.StartsWith("@") && trimmed.EndsWith("@"))
+                ids.Add(trimmed);
+        }
+
+        private static string CleanName(string data)
+        {
+            var words = data.Replace("/", " ").Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+            return string.Join(" ", words);
+        }
+
+        private static string ExtractSurname(string data)
+        {
+            int start = data.IndexOf('/');
+            int end = data.LastIndexOf('/');
+            return start >= 0 && end > start ? data.Substring(start + 1, end - start - 1).Trim() : string.Empty;
+        }
+
+        /// <summary>
+        /// Trailing whitespace was kept during parsing so CONC lines join correctly;
+        /// once everything is joined it is no longer significant.
+        /// </summary>
+        private static void TrimTextFields(GedcomTreeContext context)
+        {
+            static void TrimList(List<string> list)
+            {
+                for (int i = 0; i < list.Count; i++) list[i] = list[i].Trim();
+            }
+
+            foreach (var p in context.Individuals.Values)
+            {
+                TrimList(p.InlineNotes);
+                foreach (var e in p.Events) TrimList(e.InlineNotes);
+            }
+            foreach (var f in context.Families.Values)
+            {
+                TrimList(f.InlineNotes);
+                foreach (var e in f.Events) TrimList(e.InlineNotes);
+            }
+            foreach (var s in context.Sources.Values)
+            {
+                s.Title = s.Title.Trim();
+                s.Author = s.Author.Trim();
+                s.PublicationInfo = s.PublicationInfo.Trim();
+                TrimList(s.InlineNotes);
+            }
+            foreach (var r in context.Repositories.Values)
+            {
+                r.Name = r.Name.Trim();
+                r.Address = r.Address.Trim();
+            }
+            foreach (var n in context.Notes.Values)
+            {
+                n.Text = n.Text.Trim();
+            }
         }
     }
 }

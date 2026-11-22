@@ -11,22 +11,112 @@ namespace GenealogyDiffUtility
     /// exist only in the other tree, with roll-up counts per category and an
     /// overall score. When details are enabled, individual and family events
     /// and sources are also compared.
+    /// <para>
+    /// Matching is by stable key and counts copies: if one tree has a record
+    /// (or event) twice and the other once, one pair matches and the second copy
+    /// is reported, marked "(duplicate)".
+    /// </para>
     /// </summary>
     internal static class TreeDiffGenerator
     {
+        private sealed class Totals
+        {
+            public int Matches, Missing, Extra;
+        }
+
+        /// <summary>
+        /// The result of pairing two lists by key, counting copies.
+        /// </summary>
+        internal sealed class MatchResult<T>
+        {
+            public List<(T This, T Other)> Matched { get; } = new();
+            public List<T> Missing { get; } = new();
+            public List<T> Extra { get; } = new();
+            public HashSet<string> ThisKeys { get; } = new(StringComparer.Ordinal);
+            public HashSet<string> OtherKeys { get; } = new(StringComparer.Ordinal);
+        }
+
+        /// <summary>
+        /// Pairs items with equal keys, first with first, second with second, and
+        /// so on. Unpaired copies go to Missing (this side) or Extra (other side).
+        /// Never throws on duplicate keys.
+        /// </summary>
+        internal static MatchResult<T> Match<T>(IEnumerable<T> thisItems, IEnumerable<T> otherItems, Func<T, string> key)
+        {
+            var result = new MatchResult<T>();
+            var others = otherItems.ToList();
+            var otherQueues = new Dictionary<string, Queue<int>>(StringComparer.Ordinal);
+            var paired = new bool[others.Count];
+
+            for (int i = 0; i < others.Count; i++)
+            {
+                var k = key(others[i]);
+                result.OtherKeys.Add(k);
+                if (!otherQueues.TryGetValue(k, out var q))
+                    otherQueues[k] = q = new Queue<int>();
+                q.Enqueue(i);
+            }
+
+            foreach (var item in thisItems)
+            {
+                var k = key(item);
+                result.ThisKeys.Add(k);
+                if (otherQueues.TryGetValue(k, out var q) && q.Count > 0)
+                {
+                    int i = q.Dequeue();
+                    paired[i] = true;
+                    result.Matched.Add((item, others[i]));
+                }
+                else
+                {
+                    result.Missing.Add(item);
+                }
+            }
+
+            // Unpaired copies on the other side, in that side's order
+            for (int i = 0; i < others.Count; i++)
+            {
+                if (!paired[i]) result.Extra.Add(others[i]);
+            }
+            return result;
+        }
+
         public static string Generate(GedcomTreeContext thisCtx, GedcomTreeContext otherCtx, bool includeDetails)
         {
             var sb = new StringBuilder();
-            int totalMatches = 0, totalMissing = 0, totalExtra = 0;
+            var totals = new Totals();
 
-            AppendIndividuals(sb, thisCtx, otherCtx, includeDetails, ref totalMatches, ref totalMissing, ref totalExtra);
-            AppendFamilies(sb, thisCtx, otherCtx, includeDetails, ref totalMatches, ref totalMissing, ref totalExtra);
-            AppendSources(sb, thisCtx, otherCtx, ref totalMatches, ref totalMissing, ref totalExtra);
-            AppendRepositories(sb, thisCtx, otherCtx, ref totalMatches, ref totalMissing, ref totalExtra);
+            AppendSection(sb, "Individuals", totals,
+                thisCtx.Individuals.Values.OrderBy(p => p.DisplayName).ThenBy(p => p.Id),
+                otherCtx.Individuals.Values.OrderBy(p => p.DisplayName).ThenBy(p => p.Id),
+                p => TreeNodeKeys.GetKey(p)!, p => p.DisplayName,
+                includeDetails
+                    ? (a, b) => AppendRecordDetails(sb, a.Events, b.Events, AllSources(a.SourceIds, a.Events, thisCtx), AllSources(b.SourceIds, b.Events, otherCtx), totals)
+                    : null,
+                includeDetails ? p => AppendRecordDetailsMissing(sb, p.Events, AllSources(p.SourceIds, p.Events, thisCtx), totals) : null);
+
+            AppendSection(sb, "Families", totals,
+                thisCtx.Families.Values.OrderBy(f => f.DisplayName).ThenBy(f => f.Id),
+                otherCtx.Families.Values.OrderBy(f => f.DisplayName).ThenBy(f => f.Id),
+                f => TreeNodeKeys.GetKey(f)!, f => f.DisplayName,
+                includeDetails
+                    ? (a, b) => AppendRecordDetails(sb, a.Events, b.Events, AllSources(a.SourceIds, a.Events, thisCtx), AllSources(b.SourceIds, b.Events, otherCtx), totals)
+                    : null,
+                includeDetails ? f => AppendRecordDetailsMissing(sb, f.Events, AllSources(f.SourceIds, f.Events, thisCtx), totals) : null);
+
+            AppendSection(sb, "Sources", totals,
+                thisCtx.Sources.Values.OrderBy(s => s.Title).ThenBy(s => s.Id),
+                otherCtx.Sources.Values.OrderBy(s => s.Title).ThenBy(s => s.Id),
+                s => TreeNodeKeys.GetKey(s)!, s => s.Title, null, null);
+
+            AppendSection(sb, "Repositories", totals,
+                thisCtx.Repositories.Values.OrderBy(r => r.Name).ThenBy(r => r.Id),
+                otherCtx.Repositories.Values.OrderBy(r => r.Name).ThenBy(r => r.Id),
+                r => TreeNodeKeys.GetKey(r)!, r => r.Name, null, null);
 
             sb.AppendLine();
             sb.AppendLine("=== Overall Score ===");
-            int total = totalMatches + totalMissing + totalExtra;
+            int total = totals.Matches + totals.Missing + totals.Extra;
             if (total == 0)
             {
                 sb.AppendLine("No data to compare.");
@@ -34,356 +124,117 @@ namespace GenealogyDiffUtility
             else
             {
                 sb.AppendLine($"Total elements: {total}");
-                sb.AppendLine($"Matches: {totalMatches} ({100.0 * totalMatches / total:F1}%)");
-                sb.AppendLine($"Missing: {totalMissing} ({100.0 * totalMissing / total:F1}%)");
-                sb.AppendLine($"Extra: {totalExtra} ({100.0 * totalExtra / total:F1}%)");
+                sb.AppendLine($"Matches: {totals.Matches} ({100.0 * totals.Matches / total:F1}%)");
+                sb.AppendLine($"Missing: {totals.Missing} ({100.0 * totals.Missing / total:F1}%)");
+                sb.AppendLine($"Extra: {totals.Extra} ({100.0 * totals.Extra / total:F1}%)");
             }
 
             return sb.ToString();
         }
 
-        private static void AppendIndividuals(StringBuilder sb, GedcomTreeContext thisCtx, GedcomTreeContext otherCtx, bool includeDetails, ref int totalMatches, ref int totalMissing, ref int totalExtra)
+        private static void AppendSection<T>(StringBuilder sb, string title, Totals totals,
+            IEnumerable<T> thisItems, IEnumerable<T> otherItems,
+            Func<T, string> key, Func<T, string> label,
+            Action<T, T>? matchedDetails, Action<T>? missingDetails)
+            where T : class
         {
-            sb.AppendLine("=== Individuals ===");
-            var otherByKey = otherCtx.Individuals.Values
-                .GroupBy(i => TreeNodeKeys.GetKey(i)!)
-                .ToDictionary(g => g.Key, g => g.First());
-            var matchedOtherKeys = new HashSet<string>();
+            if (title != "Individuals") sb.AppendLine();
+            sb.AppendLine($"=== {title} ===");
 
-            int matches = 0, missing = 0;
-            foreach (var person in thisCtx.Individuals.Values.OrderBy(p => p.DisplayName).ThenBy(p => p.Id))
+            var match = Match(thisItems, otherItems, key);
+
+            // Report in this tree's order: matched records (with their detail
+            // differences) and missing records, interleaved as they appear.
+            var matchedByThis = new Dictionary<object, T>(ReferenceEqualityComparer.Instance);
+            foreach (var (thisItem, otherItem) in match.Matched)
+                matchedByThis[thisItem] = otherItem;
+            foreach (var item in thisItems)
             {
-                var key = TreeNodeKeys.GetKey(person)!;
-                if (otherByKey.TryGetValue(key, out var otherPerson))
+                if (matchedByThis.TryGetValue(item, out var other))
                 {
-                    matchedOtherKeys.Add(key);
-                    matches++;
-                    if (includeDetails)
-                        AppendPersonDetails(sb, person, otherPerson, thisCtx, otherCtx, ref totalMatches, ref totalMissing, ref totalExtra);
+                    matchedDetails?.Invoke(item, other);
                 }
                 else
                 {
-                    missing++;
-                    sb.AppendLine($"  [MISSING] {person.DisplayName}");
-                    if (includeDetails)
-                        AppendPersonDetailsMissing(sb, person, thisCtx, ref totalMissing);
+                    sb.AppendLine($"  [MISSING] {label(item)}{DuplicateNote(match.OtherKeys, key(item))}");
+                    missingDetails?.Invoke(item);
                 }
             }
 
-            int extra = 0;
-            foreach (var otherPerson in otherCtx.Individuals.Values.OrderBy(p => p.DisplayName).ThenBy(p => p.Id))
+            foreach (var item in match.Extra)
             {
-                if (!matchedOtherKeys.Contains(TreeNodeKeys.GetKey(otherPerson)!))
-                {
-                    extra++;
-                    sb.AppendLine($"  [EXTRA] {otherPerson.DisplayName}");
-                }
+                sb.AppendLine($"  [EXTRA] {label(item)}{DuplicateNote(match.ThisKeys, key(item))}");
             }
 
-            sb.AppendLine($"Matches: {matches} | Missing: {missing} | Extra: {extra}");
-            totalMatches += matches;
-            totalMissing += missing;
-            totalExtra += extra;
+            sb.AppendLine($"Matches: {match.Matched.Count} | Missing: {match.Missing.Count} | Extra: {match.Extra.Count}");
+            totals.Matches += match.Matched.Count;
+            totals.Missing += match.Missing.Count;
+            totals.Extra += match.Extra.Count;
         }
 
-        private static void AppendFamilies(StringBuilder sb, GedcomTreeContext thisCtx, GedcomTreeContext otherCtx, bool includeDetails, ref int totalMatches, ref int totalMissing, ref int totalExtra)
+        /// <summary>
+        /// A record whose key exists on the other side too is an unpaired extra copy.
+        /// </summary>
+        private static string DuplicateNote(HashSet<string> otherSideKeys, string key) =>
+            otherSideKeys.Contains(key) ? " (duplicate)" : string.Empty;
+
+        private static void AppendRecordDetails(StringBuilder sb,
+            IEnumerable<GedcomEvent> thisEvents, IEnumerable<GedcomEvent> otherEvents,
+            IEnumerable<SourceNode> thisSources, IEnumerable<SourceNode> otherSources, Totals totals)
         {
-            sb.AppendLine();
-            sb.AppendLine("=== Families ===");
-            var otherByKey = otherCtx.Families.Values
-                .GroupBy(f => TreeNodeKeys.GetKey(f)!)
-                .ToDictionary(g => g.Key, g => g.First());
-            var matchedOtherKeys = new HashSet<string>();
+            var events = Match(thisEvents.Where(e => !e.IsInternal), otherEvents.Where(e => !e.IsInternal), EventKey);
+            foreach (var evt in events.Missing)
+                sb.AppendLine($"      [MISSING] Event: {evt.DisplayName}{DuplicateNote(events.OtherKeys, EventKey(evt))}");
+            foreach (var evt in events.Extra)
+                sb.AppendLine($"      [EXTRA] Event: {evt.DisplayName}{DuplicateNote(events.ThisKeys, EventKey(evt))}");
 
-            int matches = 0, missing = 0;
-            foreach (var family in thisCtx.Families.Values.OrderBy(f => f.DisplayName).ThenBy(f => f.Id))
-            {
-                var key = TreeNodeKeys.GetKey(family)!;
-                if (otherByKey.TryGetValue(key, out var otherFamily))
-                {
-                    matchedOtherKeys.Add(key);
-                    matches++;
-                    if (includeDetails)
-                        AppendFamilyDetails(sb, family, otherFamily, thisCtx, otherCtx, ref totalMatches, ref totalMissing, ref totalExtra);
-                }
-                else
-                {
-                    missing++;
-                    sb.AppendLine($"  [MISSING] {family.DisplayName}");
-                    if (includeDetails)
-                        AppendFamilyDetailsMissing(sb, family, thisCtx, ref totalMissing);
-                }
-            }
+            var sources = Match(thisSources, otherSources, s => TreeNodeKeys.GetKey(s)!);
+            foreach (var src in sources.Missing)
+                sb.AppendLine($"      [MISSING] Source: {src.Title}{DuplicateNote(sources.OtherKeys, TreeNodeKeys.GetKey(src)!)}");
+            foreach (var src in sources.Extra)
+                sb.AppendLine($"      [EXTRA] Source: {src.Title}{DuplicateNote(sources.ThisKeys, TreeNodeKeys.GetKey(src)!)}");
 
-            int extra = 0;
-            foreach (var otherFamily in otherCtx.Families.Values.OrderBy(f => f.DisplayName).ThenBy(f => f.Id))
-            {
-                if (!matchedOtherKeys.Contains(TreeNodeKeys.GetKey(otherFamily)!))
-                {
-                    extra++;
-                    sb.AppendLine($"  [EXTRA] {otherFamily.DisplayName}");
-                }
-            }
-
-            sb.AppendLine($"Matches: {matches} | Missing: {missing} | Extra: {extra}");
-            totalMatches += matches;
-            totalMissing += missing;
-            totalExtra += extra;
+            totals.Matches += events.Matched.Count + sources.Matched.Count;
+            totals.Missing += events.Missing.Count + sources.Missing.Count;
+            totals.Extra += events.Extra.Count + sources.Extra.Count;
         }
 
-        private static void AppendSources(StringBuilder sb, GedcomTreeContext thisCtx, GedcomTreeContext otherCtx, ref int totalMatches, ref int totalMissing, ref int totalExtra)
+        private static void AppendRecordDetailsMissing(StringBuilder sb, IEnumerable<GedcomEvent> events,
+            IEnumerable<SourceNode> sources, Totals totals)
         {
-            sb.AppendLine();
-            sb.AppendLine("=== Sources ===");
-            var otherByKey = otherCtx.Sources.Values
-                .GroupBy(s => TreeNodeKeys.GetKey(s)!)
-                .ToDictionary(g => g.Key, g => g.First());
-            var matchedOtherKeys = new HashSet<string>();
-
-            int matches = 0, missing = 0;
-            foreach (var source in thisCtx.Sources.Values.OrderBy(s => s.Title).ThenBy(s => s.Id))
+            foreach (var evt in events.Where(e => !e.IsInternal))
             {
-                var key = TreeNodeKeys.GetKey(source)!;
-                if (otherByKey.TryGetValue(key, out _))
-                {
-                    matchedOtherKeys.Add(key);
-                    matches++;
-                }
-                else
-                {
-                    missing++;
-                    sb.AppendLine($"  [MISSING] {source.Title}");
-                }
-            }
-
-            int extra = 0;
-            foreach (var otherSource in otherCtx.Sources.Values.OrderBy(s => s.Title).ThenBy(s => s.Id))
-            {
-                if (!matchedOtherKeys.Contains(TreeNodeKeys.GetKey(otherSource)!))
-                {
-                    extra++;
-                    sb.AppendLine($"  [EXTRA] {otherSource.Title}");
-                }
-            }
-
-            sb.AppendLine($"Matches: {matches} | Missing: {missing} | Extra: {extra}");
-            totalMatches += matches;
-            totalMissing += missing;
-            totalExtra += extra;
-        }
-
-        private static void AppendRepositories(StringBuilder sb, GedcomTreeContext thisCtx, GedcomTreeContext otherCtx, ref int totalMatches, ref int totalMissing, ref int totalExtra)
-        {
-            sb.AppendLine();
-            sb.AppendLine("=== Repositories ===");
-            var otherByKey = otherCtx.Repositories.Values
-                .GroupBy(r => TreeNodeKeys.GetKey(r)!)
-                .ToDictionary(g => g.Key, g => g.First());
-            var matchedOtherKeys = new HashSet<string>();
-
-            int matches = 0, missing = 0;
-            foreach (var repo in thisCtx.Repositories.Values.OrderBy(r => r.Name).ThenBy(r => r.Id))
-            {
-                var key = TreeNodeKeys.GetKey(repo)!;
-                if (otherByKey.TryGetValue(key, out _))
-                {
-                    matchedOtherKeys.Add(key);
-                    matches++;
-                }
-                else
-                {
-                    missing++;
-                    sb.AppendLine($"  [MISSING] {repo.Name}");
-                }
-            }
-
-            int extra = 0;
-            foreach (var otherRepo in otherCtx.Repositories.Values.OrderBy(r => r.Name).ThenBy(r => r.Id))
-            {
-                if (!matchedOtherKeys.Contains(TreeNodeKeys.GetKey(otherRepo)!))
-                {
-                    extra++;
-                    sb.AppendLine($"  [EXTRA] {otherRepo.Name}");
-                }
-            }
-
-            sb.AppendLine($"Matches: {matches} | Missing: {missing} | Extra: {extra}");
-            totalMatches += matches;
-            totalMissing += missing;
-            totalExtra += extra;
-        }
-
-        private static void AppendPersonDetails(StringBuilder sb, IndividualNode person, IndividualNode otherPerson, GedcomTreeContext thisCtx, GedcomTreeContext otherCtx, ref int totalMatches, ref int totalMissing, ref int totalExtra)
-        {
-            // Events
-            var otherEvents = otherPerson.Events.Where(e => !e.IsInternal).ToDictionary(e => EventKey(e));
-            var matchedEventKeys = new HashSet<string>();
-            foreach (var evt in person.Events.Where(e => !e.IsInternal))
-            {
-                var key = EventKey(evt);
-                if (otherEvents.ContainsKey(key))
-                {
-                    matchedEventKeys.Add(key);
-                    totalMatches++;
-                }
-                else
-                {
-                    totalMissing++;
-                    sb.AppendLine($"      [MISSING] Event: {evt.DisplayName}");
-                }
-            }
-            foreach (var evt in otherPerson.Events.Where(e => !e.IsInternal))
-            {
-                if (!matchedEventKeys.Contains(EventKey(evt)))
-                {
-                    totalExtra++;
-                    sb.AppendLine($"      [EXTRA] Event: {evt.DisplayName}");
-                }
-            }
-
-            // Sources (direct + event-level)
-            var thisSources = ResolveAllSources(person.SourceIds, person.Events, thisCtx).ToList();
-            var otherSources = ResolveAllSources(otherPerson.SourceIds, otherPerson.Events, otherCtx).ToList();
-            var otherSourceKeys = otherSources.Select(s => TreeNodeKeys.GetKey(s)!).ToHashSet();
-            var matchedSourceKeys = new HashSet<string>();
-            foreach (var src in thisSources)
-            {
-                var key = TreeNodeKeys.GetKey(src)!;
-                if (otherSourceKeys.Contains(key))
-                {
-                    matchedSourceKeys.Add(key);
-                    totalMatches++;
-                }
-                else
-                {
-                    totalMissing++;
-                    sb.AppendLine($"      [MISSING] Source: {src.Title}");
-                }
-            }
-            foreach (var src in otherSources)
-            {
-                var key = TreeNodeKeys.GetKey(src)!;
-                if (!matchedSourceKeys.Contains(key))
-                {
-                    totalExtra++;
-                    sb.AppendLine($"      [EXTRA] Source: {src.Title}");
-                }
-            }
-        }
-
-        private static void AppendPersonDetailsMissing(StringBuilder sb, IndividualNode person, GedcomTreeContext thisCtx, ref int totalMissing)
-        {
-            foreach (var evt in person.Events.Where(e => !e.IsInternal))
-            {
-                totalMissing++;
+                totals.Missing++;
                 sb.AppendLine($"      [MISSING] Event: {evt.DisplayName}");
             }
-            foreach (var src in ResolveAllSources(person.SourceIds, person.Events, thisCtx))
+            foreach (var src in sources)
             {
-                totalMissing++;
+                totals.Missing++;
                 sb.AppendLine($"      [MISSING] Source: {src.Title}");
             }
         }
 
-        private static void AppendFamilyDetails(StringBuilder sb, FamilyNode family, FamilyNode otherFamily, GedcomTreeContext thisCtx, GedcomTreeContext otherCtx, ref int totalMatches, ref int totalMissing, ref int totalExtra)
-        {
-            // Events
-            var otherEvents = otherFamily.Events.Where(e => !e.IsInternal).ToDictionary(e => EventKey(e));
-            var matchedEventKeys = new HashSet<string>();
-            foreach (var evt in family.Events.Where(e => !e.IsInternal))
-            {
-                var key = EventKey(evt);
-                if (otherEvents.ContainsKey(key))
-                {
-                    matchedEventKeys.Add(key);
-                    totalMatches++;
-                }
-                else
-                {
-                    totalMissing++;
-                    sb.AppendLine($"      [MISSING] Event: {evt.DisplayName}");
-                }
-            }
-            foreach (var evt in otherFamily.Events.Where(e => !e.IsInternal))
-            {
-                if (!matchedEventKeys.Contains(EventKey(evt)))
-                {
-                    totalExtra++;
-                    sb.AppendLine($"      [EXTRA] Event: {evt.DisplayName}");
-                }
-            }
-
-            // Sources (direct + event-level)
-            var thisSources = ResolveAllSources(family.SourceIds, family.Events, thisCtx).ToList();
-            var otherSources = ResolveAllSources(otherFamily.SourceIds, otherFamily.Events, otherCtx).ToList();
-            var otherSourceKeys = otherSources.Select(s => TreeNodeKeys.GetKey(s)!).ToHashSet();
-            var matchedSourceKeys = new HashSet<string>();
-            foreach (var src in thisSources)
-            {
-                var key = TreeNodeKeys.GetKey(src)!;
-                if (otherSourceKeys.Contains(key))
-                {
-                    matchedSourceKeys.Add(key);
-                    totalMatches++;
-                }
-                else
-                {
-                    totalMissing++;
-                    sb.AppendLine($"      [MISSING] Source: {src.Title}");
-                }
-            }
-            foreach (var src in otherSources)
-            {
-                var key = TreeNodeKeys.GetKey(src)!;
-                if (!matchedSourceKeys.Contains(key))
-                {
-                    totalExtra++;
-                    sb.AppendLine($"      [EXTRA] Source: {src.Title}");
-                }
-            }
-        }
-
-        private static void AppendFamilyDetailsMissing(StringBuilder sb, FamilyNode family, GedcomTreeContext thisCtx, ref int totalMissing)
-        {
-            foreach (var evt in family.Events.Where(e => !e.IsInternal))
-            {
-                totalMissing++;
-                sb.AppendLine($"      [MISSING] Event: {evt.DisplayName}");
-            }
-            foreach (var src in ResolveAllSources(family.SourceIds, family.Events, thisCtx))
-            {
-                totalMissing++;
-                sb.AppendLine($"      [MISSING] Source: {src.Title}");
-            }
-        }
-
-        private static IEnumerable<SourceNode> ResolveAllSources(IEnumerable<string> directIds, IEnumerable<GedcomEvent> events, GedcomTreeContext ctx)
+        /// <summary>
+        /// The distinct sources a record cites, directly or through its events.
+        /// </summary>
+        private static List<SourceNode> AllSources(IEnumerable<string> directIds, IEnumerable<GedcomEvent> events, GedcomTreeContext ctx)
         {
             var ids = new HashSet<string>(directIds);
             foreach (var evt in events)
             {
-                foreach (var sid in evt.SourceIds)
-                {
-                    ids.Add(sid);
-                }
+                ids.UnionWith(evt.SourceIds);
             }
+
+            var result = new List<SourceNode>();
             foreach (var id in ids)
             {
                 if (ctx.Sources.TryGetValue(id, out var src))
-                {
-                    yield return src;
-                }
+                    result.Add(src);
             }
+            return result;
         }
 
         private static string EventKey(GedcomEvent e) =>
-            $"{e.Type}|{e.SubType}|{Normalize(e.Date)}|{Normalize(e.Place)}|{Normalize(e.Data)}";
-
-        private static string Normalize(string value)
-        {
-            if (string.IsNullOrWhiteSpace(value)) return string.Empty;
-            var parts = value.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
-            return string.Join(" ", parts).ToLowerInvariant();
-        }
+            $"{e.Type}|{TreeNodeKeys.NormalizeName(e.SubType)}|{TreeNodeKeys.NormalizeName(e.Date)}|{TreeNodeKeys.NormalizeName(e.Place)}|{TreeNodeKeys.NormalizeName(e.Data)}";
     }
 }

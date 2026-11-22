@@ -103,7 +103,7 @@ namespace GenealogyDiffUtility
 
             // Assign collision indices to individuals without birth dates who share
             // the same name, so their stable identity keys are unique within this tree.
-            AssignCollisionIndices(_context);
+            TreeNodeKeys.AssignCollisionIndices(_context);
 
             // 1. Header Node
             var headerNode = new TreeGroupNode
@@ -499,6 +499,16 @@ namespace GenealogyDiffUtility
                 }
             }
 
+            // Note text written directly on the family
+            foreach (var inlineNote in family.InlineNotes)
+            {
+                family.Details.Add(new FamilyDetailNode
+                {
+                    Role = "Note",
+                    DisplayName = $"Note: {inlineNote}"
+                });
+            }
+
             // Events (marriage, divorce, etc.)
             foreach (var evt in family.Events)
             {
@@ -530,6 +540,27 @@ namespace GenealogyDiffUtility
                     });
                 }
             }
+
+            // Notes on the event (pointer and inline) are shown alongside its sources
+            foreach (var noteId in evt.NoteIds)
+            {
+                if (_context.Notes.TryGetValue(noteId, out var note))
+                {
+                    eventNode.Sources.Add(new EventSourceDetailNode
+                    {
+                        Role = "Note",
+                        DisplayName = $"Note: {note.DisplayName}"
+                    });
+                }
+            }
+            foreach (var inlineNote in evt.InlineNotes)
+            {
+                eventNode.Sources.Add(new EventSourceDetailNode
+                {
+                    Role = "Note",
+                    DisplayName = $"Note: {inlineNote}"
+                });
+            }
         }
 
         /// <summary>
@@ -538,6 +569,16 @@ namespace GenealogyDiffUtility
         /// </summary>
         private void BuildDetails(IndividualNode person)
         {
+            // Alternate names (second and later NAME lines)
+            foreach (var altName in person.AlternateNames)
+            {
+                person.Details.Add(new IndividualDetailNode
+                {
+                    Role = "Name",
+                    DisplayName = $"Also known as: {altName}"
+                });
+            }
+
             // Spouses and children from the families in which this person is a spouse
             foreach (var family in _context.Families.Values)
             {
@@ -579,6 +620,16 @@ namespace GenealogyDiffUtility
                         DisplayName = $"Note: {note.DisplayName}"
                     });
                 }
+            }
+
+            // Note text written directly on the person
+            foreach (var inlineNote in person.InlineNotes)
+            {
+                person.Details.Add(new IndividualDetailNode
+                {
+                    Role = "Note",
+                    DisplayName = $"Note: {inlineNote}"
+                });
             }
 
             // Events (birth, death, burial, baptism, census, residence, etc.)
@@ -644,27 +695,6 @@ namespace GenealogyDiffUtility
             }
         }
 
-        /// <summary>
-        /// Assigns <see cref="IndividualNode.CollisionIndex"/> values to individuals
-        /// that share a name and lack a birth date, so their stable identity keys
-        /// remain unique. The order is deterministic (by record Id) so two exports
-        /// of the same family assign matching indices.
-        /// </summary>
-        private static void AssignCollisionIndices(GedcomTreeContext context)
-        {
-            foreach (var group in context.Individuals.Values
-                .Where(p => string.IsNullOrWhiteSpace(p.BirthDate))
-                .GroupBy(p => TreeNodeKeys.NormalizeName(p.FullName))
-                .Where(g => g.Count() > 1)
-                .Select(g => g.OrderBy(p => p.Id, StringComparer.Ordinal).ToList()))
-            {
-                for (int i = 0; i < group.Count; i++)
-                {
-                    group[i].CollisionIndex = i + 1;
-                }
-            }
-        }
-
         private void RegisterNode(object node)
         {
             if (node is TreeNodeBase tn && !_nodeMap.ContainsKey(node))
@@ -709,7 +739,20 @@ namespace GenealogyDiffUtility
         public void ApplySync(TreeSyncEventArgs e)
         {
             var node = FindNodeByPath(e.Path);
-            if (node is not TreeNodeBase tn) return;
+            if (node is not TreeNodeBase tn)
+            {
+                // The other tree selected a record this tree doesn't have. Clear this
+                // tree's selection so it no longer highlights an unrelated record
+                // (and so mismatch navigation continues from the other tree's position).
+                if (e.SelectedSet && e.IsSelectedValue)
+                {
+                    foreach (var other in _nodeMap.Values)
+                    {
+                        if (other.IsSelected) other.IsSelected = false;
+                    }
+                }
+                return;
+            }
 
             // When expanding or selecting a node, expand its ancestors first so the
             // target becomes visible in the receiving tree (Avalonia realizes item

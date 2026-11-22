@@ -8,6 +8,13 @@ namespace GenealogyDiffUtility
     /// Coordinates navigation between the left and right trees, jumping
     /// to the next or previous mismatch (a node missing from one tree,
     /// or a node whose data differs between the two trees).
+    /// <para>
+    /// Records are compared by content, never by GEDCOM record Id: two exports
+    /// of the same tree usually number their records differently (@S55@ vs
+    /// @S00055@), so linked sources and notes are compared by their stable keys
+    /// and dates, places and names are compared after normalization
+    /// ("24 Aug 1938" equals "24 AUG 1938").
+    /// </para>
     /// </summary>
     internal class MismatchNavigator
     {
@@ -27,8 +34,9 @@ namespace GenealogyDiffUtility
         }
 
         /// <summary>
-        /// Navigates to the next mismatch in the tree, starting from the
-        /// currently selected node in the given source tree.
+        /// Navigates to the next mismatch, starting from the currently selected
+        /// node (in either tree). The match is selected in <paramref name="source"/>
+        /// when it exists there, otherwise in the other tree.
         /// </summary>
         public void NavigateToNextMismatch(DiffTreeViewModel source)
         {
@@ -36,8 +44,8 @@ namespace GenealogyDiffUtility
         }
 
         /// <summary>
-        /// Navigates to the previous mismatch in the tree, starting from the
-        /// currently selected node in the given source tree.
+        /// Navigates to the previous mismatch, starting from the currently
+        /// selected node (in either tree).
         /// </summary>
         public void NavigateToPreviousMismatch(DiffTreeViewModel source)
         {
@@ -47,94 +55,110 @@ namespace GenealogyDiffUtility
         private void Navigate(DiffTreeViewModel source, int direction)
         {
             if (_left == null || _right == null) return;
+            var other = ReferenceEquals(source, _left) ? _right : _left;
 
-            // Build a unified ordered list of all node keys from both trees
-            var leftFlat = FlattenWithKeys(_left);
-            var rightFlat = FlattenWithKeys(_right);
+            var sourceFlat = FlattenWithKeys(source);
+            var otherFlat = FlattenWithKeys(other);
+            var sourceNodes = FirstByKey(sourceFlat);
+            var otherNodes = FirstByKey(otherFlat);
 
-            // Build a unified ordered list of unique keys (preserving tree order)
-            var allKeys = new List<string>();
-            var keySet = new HashSet<string>();
-            foreach (var (key, _) in leftFlat.Concat(rightFlat))
+            var allKeys = MergeOrder(sourceFlat, otherFlat, sourceNodes);
+            if (allKeys.Count == 0) return;
+
+            var comparer = new NodeComparer(source.Context, other.Context);
+            bool IsMismatch(string key)
             {
-                if (keySet.Add(key))
-                {
-                    allKeys.Add(key);
-                }
+                sourceNodes.TryGetValue(key, out var a);
+                otherNodes.TryGetValue(key, out var b);
+                if (a == null || b == null) return true;
+                return !comparer.NodesEqual(a, b);
             }
 
-            // Determine which keys are mismatches
-            var mismatchKeys = new HashSet<string>();
-            foreach (var key in allKeys)
-            {
-                if (IsMismatch(key, leftFlat, rightFlat))
-                {
-                    mismatchKeys.Add(key);
-                }
-            }
-
-            if (mismatchKeys.Count == 0) return;
-
-            // Find the current position based on the selected node in the source tree
+            // The current position is the selected node in either tree (a record
+            // that exists only in the other tree is selected there).
             int currentIndex = -1;
-            var selectedKey = source.GetSelectedNodeKey();
+            var selectedKey = source.GetSelectedNodeKey() ?? other.GetSelectedNodeKey();
             if (selectedKey != null)
             {
                 currentIndex = allKeys.IndexOf(selectedKey);
             }
 
-            // Find the next/previous mismatch
-            int targetIndex = -1;
-            if (currentIndex < 0)
+            int i = currentIndex >= 0
+                ? currentIndex + direction
+                : (direction > 0 ? 0 : allKeys.Count - 1);
+
+            for (; i >= 0 && i < allKeys.Count; i += direction)
             {
-                // No selection - start from beginning (down) or end (up)
-                if (direction > 0)
+                var key = allKeys[i];
+                if (!IsMismatch(key)) continue;
+
+                if (sourceNodes.TryGetValue(key, out var inSource))
+                    source.SelectNode(inSource);
+                else if (otherNodes.TryGetValue(key, out var inOther))
+                    other.SelectNode(inOther);
+                return;
+            }
+        }
+
+        /// <summary>
+        /// Builds one ordered key list covering both trees: the source tree's order,
+        /// with keys that exist only in the other tree inserted right after the
+        /// nearest preceding key the two trees share.
+        /// </summary>
+        private static List<string> MergeOrder(List<(string Key, object Node)> sourceFlat,
+            List<(string Key, object Node)> otherFlat, Dictionary<string, object> sourceNodes)
+        {
+            var leading = new List<string>();                          // other-only keys before any shared key
+            var insertAfter = new Dictionary<string, List<string>>();   // shared key -> other-only keys after it
+            var seenOtherOnly = new HashSet<string>();
+            string? anchor = null;
+
+            foreach (var (key, _) in otherFlat)
+            {
+                if (sourceNodes.ContainsKey(key))
                 {
-                    for (int i = 0; i < allKeys.Count; i++)
-                    {
-                        if (mismatchKeys.Contains(allKeys[i]))
-                        {
-                            targetIndex = i;
-                            break;
-                        }
-                    }
+                    anchor = key;
+                    continue;
+                }
+                if (!seenOtherOnly.Add(key)) continue;
+
+                if (anchor == null)
+                {
+                    leading.Add(key);
                 }
                 else
                 {
-                    for (int i = allKeys.Count - 1; i >= 0; i--)
-                    {
-                        if (mismatchKeys.Contains(allKeys[i]))
-                        {
-                            targetIndex = i;
-                            break;
-                        }
-                    }
+                    if (!insertAfter.TryGetValue(anchor, out var list))
+                        insertAfter[anchor] = list = new List<string>();
+                    list.Add(key);
                 }
             }
-            else
+
+            var result = new List<string>(leading);
+            var seen = new HashSet<string>(leading);
+            foreach (var (key, _) in sourceFlat)
             {
-                // Start from the current position and find the next/previous mismatch
-                int i = currentIndex + direction;
-                while (i >= 0 && i < allKeys.Count)
+                if (!seen.Add(key)) continue;
+                result.Add(key);
+                if (insertAfter.TryGetValue(key, out var following))
                 {
-                    if (mismatchKeys.Contains(allKeys[i]))
+                    foreach (var k in following)
                     {
-                        targetIndex = i;
-                        break;
+                        if (seen.Add(k)) result.Add(k);
                     }
-                    i += direction;
                 }
             }
+            return result;
+        }
 
-            if (targetIndex < 0) return;
-
-            // Navigate to the target node in the source tree
-            var targetKey = allKeys[targetIndex];
-            var targetNode = FindNodeByKey(source, targetKey);
-            if (targetNode == null) return;
-
-            // Select the node in the source tree
-            source.SelectNode(targetNode);
+        private static Dictionary<string, object> FirstByKey(List<(string Key, object Node)> flat)
+        {
+            var map = new Dictionary<string, object>(StringComparer.Ordinal);
+            foreach (var (key, node) in flat)
+            {
+                map.TryAdd(key, node);
+            }
+            return map;
         }
 
         private static List<(string Key, object Node)> FlattenWithKeys(DiffTreeViewModel vm)
@@ -169,167 +193,127 @@ namespace GenealogyDiffUtility
             }
         }
 
-        private static bool IsMismatch(string key, List<(string Key, object Node)> left, List<(string Key, object Node)> right)
-        {
-            var leftNode = left.FirstOrDefault(n => n.Key == key).Node;
-            var rightNode = right.FirstOrDefault(n => n.Key == key).Node;
-
-            // Missing from one side
-            if (leftNode == null || rightNode == null) return true;
-
-            // Data difference
-            return !NodesEqual(leftNode, rightNode);
-        }
-
-        private static bool NodesEqual(object a, object b)
-        {
-            return a switch
-            {
-                IndividualNode ia => IndividualEqual(ia, b as IndividualNode),
-                FamilyNode fa => FamilyEqual(fa, b as FamilyNode),
-                SourceNode sa => SourceEqual(sa, b as SourceNode),
-                RepositoryNode ra => RepositoryEqual(ra, b as RepositoryNode),
-                NoteNode na => NoteEqual(na, b as NoteNode),
-                GedcomHeader ha => HeaderEqual(ha, b as GedcomHeader),
-                TreeGroupNode ga => GroupEqual(ga, b as TreeGroupNode),
-                SurnameGroupNode sa => SurnameEqual(sa, b as SurnameGroupNode),
-                _ => ReferenceEquals(a, b)
-            };
-        }
-
-        private static bool IndividualEqual(IndividualNode a, IndividualNode? b)
-        {
-            if (b == null) return false;
-            return a.FullName == b.FullName &&
-                   a.Gender == b.Gender &&
-                   a.BirthDate == b.BirthDate &&
-                   a.BirthPlace == b.BirthPlace &&
-                   a.DeathDate == b.DeathDate &&
-                   a.DeathPlace == b.DeathPlace &&
-                   StringSetEqual(a.SourceIds, b.SourceIds) &&
-                   StringSetEqual(CollectEventSourceIds(a.Events), CollectEventSourceIds(b.Events)) &&
-                   StringSetEqual(a.NoteIds, b.NoteIds);
-        }
-
-        private static bool FamilyEqual(FamilyNode a, FamilyNode? b)
-        {
-            if (b == null) return false;
-            // Husband/wife identity is already matched by the stable family key
-            // (built from their person keys), so here we only compare the
-            // remaining family-specific data.
-            return a.MarriageDate == b.MarriageDate &&
-                   a.MarriagePlace == b.MarriagePlace &&
-                   a.ChildrenIds.Count == b.ChildrenIds.Count &&
-                   StringSetEqual(a.SourceIds, b.SourceIds) &&
-                   StringSetEqual(CollectEventSourceIds(a.Events), CollectEventSourceIds(b.Events)) &&
-                   a.NoteIds.Count == b.NoteIds.Count;
-        }
-        private static bool StringSetEqual(List<string> a, List<string> b)
-        {
-            if (a.Count != b.Count) return false;
-            var setA = new HashSet<string>(a);
-            var setB = new HashSet<string>(b);
-            return setA.SetEquals(setB);
-        }
-        private static bool StringSetEqual(IEnumerable<string> a, IEnumerable<string> b)
-        {
-            var setA = new HashSet<string>(a);
-            var setB = new HashSet<string>(b);
-            return setA.SetEquals(setB);
-        }
-
         /// <summary>
-        /// Collects the union of all source IDs cited by the given events.
-        /// Used to detect differences in which sources prove an individual's
-        /// or family's events (e.g., a birth, death, or marriage citation).
+        /// Compares two nodes already matched by stable key, resolving each tree's
+        /// record pointers through that tree's own context.
         /// </summary>
-        private static HashSet<string> CollectEventSourceIds(IEnumerable<GedcomEvent> events)
+        internal sealed class NodeComparer
         {
-            var set = new HashSet<string>();
-            foreach (var evt in events)
+            private readonly GedcomTreeContext _a;
+            private readonly GedcomTreeContext _b;
+
+            public NodeComparer(GedcomTreeContext a, GedcomTreeContext b)
             {
-                foreach (var sid in evt.SourceIds)
+                _a = a;
+                _b = b;
+            }
+
+            public bool NodesEqual(object a, object b)
+            {
+                return a switch
                 {
-                    set.Add(sid);
-                }
+                    IndividualNode ia => b is IndividualNode ib && IndividualEqual(ia, ib),
+                    FamilyNode fa => b is FamilyNode fb && FamilyEqual(fa, fb),
+                    SourceNode sa => b is SourceNode sb && SourceEqual(sa, sb),
+                    RepositoryNode ra => b is RepositoryNode rb && RepositoryEqual(ra, rb),
+                    NoteNode na => b is NoteNode nb && N(na.Text) == N(nb.Text),
+                    GedcomHeader ha => b is GedcomHeader hb && HeaderEqual(ha, hb),
+                    TreeGroupNode ga => b is TreeGroupNode gb && ga.Key == gb.Key,
+                    SurnameGroupNode sa => b is SurnameGroupNode sb && sa.Surname == sb.Surname,
+                    _ => ReferenceEquals(a, b)
+                };
             }
-            return set;
-        }
 
-        private static bool SourceEqual(SourceNode a, SourceNode? b)
-        {
-            if (b == null) return false;
-            // Source identity is already matched by the stable source key
-            // (built from title, author, and publication info), so here we only
-            // compare the remaining source-specific data.
-            return a.Title == b.Title &&
-                   a.Author == b.Author &&
-                   a.PublicationInfo == b.PublicationInfo &&
-                   a.NoteIds.Count == b.NoteIds.Count;
-        }
-
-        private static bool RepositoryEqual(RepositoryNode a, RepositoryNode? b)
-        {
-            if (b == null) return false;
-            // Repository identity is already matched by the stable repository key
-            // (built from name and address), so here we only compare remaining data.
-            return a.Name == b.Name &&
-                   a.Address == b.Address &&
-                   a.NoteIds.Count == b.NoteIds.Count;
-        }
-
-        private static bool NoteEqual(NoteNode a, NoteNode? b)
-        {
-            if (b == null) return false;
-            return a.Text == b.Text;
-        }
-
-        private static bool HeaderEqual(GedcomHeader a, GedcomHeader? b)
-        {
-            if (b == null) return false;
-            return a.SourceSoftware == b.SourceSoftware &&
-                   a.SoftwareVersion == b.SoftwareVersion &&
-                   a.GedcomVersion == b.GedcomVersion &&
-                   a.CharacterEncoding == b.CharacterEncoding &&
-                   a.FileCreationDate == b.FileCreationDate;
-        }
-
-        private static bool GroupEqual(TreeGroupNode a, TreeGroupNode? b)
-        {
-            if (b == null) return false;
-            return a.Key == b.Key;
-        }
-
-        private static bool SurnameEqual(SurnameGroupNode a, SurnameGroupNode? b)
-        {
-            if (b == null) return false;
-            return a.Surname == b.Surname;
-        }
-
-        private static object? FindNodeByKey(DiffTreeViewModel vm, string key)
-        {
-            foreach (var group in vm.TreeNodes)
+            private bool IndividualEqual(IndividualNode a, IndividualNode b)
             {
-                if (TreeNodeKeys.GetKey(group) == key) return group;
-                var found = FindNodeByKeyRecursive(group.Children, key);
-                if (found != null) return found;
+                return N(a.FullName) == N(b.FullName) &&
+                       Sex(a.Gender) == Sex(b.Gender) &&
+                       N(a.BirthDate) == N(b.BirthDate) &&
+                       N(a.BirthPlace) == N(b.BirthPlace) &&
+                       N(a.DeathDate) == N(b.DeathDate) &&
+                       N(a.DeathPlace) == N(b.DeathPlace) &&
+                       TextSet(a.AlternateNames).SetEquals(TextSet(b.AlternateNames)) &&
+                       SourceKeys(a.SourceIds, _a).SetEquals(SourceKeys(b.SourceIds, _b)) &&
+                       SourceKeys(EventSourceIds(a.Events), _a).SetEquals(SourceKeys(EventSourceIds(b.Events), _b)) &&
+                       NoteKeys(a.NoteIds, _a).SetEquals(NoteKeys(b.NoteIds, _b)) &&
+                       TextSet(a.InlineNotes).SetEquals(TextSet(b.InlineNotes));
             }
-            return null;
-        }
 
-        private static object? FindNodeByKeyRecursive(IEnumerable<object> children, string key)
-        {
-            foreach (var child in children)
+            private bool FamilyEqual(FamilyNode a, FamilyNode b)
             {
-                if (TreeNodeKeys.GetKey(child) == key) return child;
-                var subChildren = TreeNodeKeys.GetChildren(child);
-                if (subChildren != null)
-                {
-                    var found = FindNodeByKeyRecursive(subChildren, key);
-                    if (found != null) return found;
-                }
+                // Husband/wife identity is already matched by the stable family key
+                // (built from their person keys), so here we only compare the
+                // remaining family-specific data.
+                return N(a.MarriageDate) == N(b.MarriageDate) &&
+                       N(a.MarriagePlace) == N(b.MarriagePlace) &&
+                       PersonKeys(a.ChildrenIds, _a).SetEquals(PersonKeys(b.ChildrenIds, _b)) &&
+                       SourceKeys(a.SourceIds, _a).SetEquals(SourceKeys(b.SourceIds, _b)) &&
+                       SourceKeys(EventSourceIds(a.Events), _a).SetEquals(SourceKeys(EventSourceIds(b.Events), _b)) &&
+                       NoteKeys(a.NoteIds, _a).SetEquals(NoteKeys(b.NoteIds, _b)) &&
+                       TextSet(a.InlineNotes).SetEquals(TextSet(b.InlineNotes));
             }
-            return null;
+
+            private bool SourceEqual(SourceNode a, SourceNode b)
+            {
+                return N(a.Title) == N(b.Title) &&
+                       N(a.Author) == N(b.Author) &&
+                       N(a.PublicationInfo) == N(b.PublicationInfo) &&
+                       RepositoryKey(a.RepositoryId, _a) == RepositoryKey(b.RepositoryId, _b) &&
+                       NoteKeys(a.NoteIds, _a).SetEquals(NoteKeys(b.NoteIds, _b)) &&
+                       TextSet(a.InlineNotes).SetEquals(TextSet(b.InlineNotes));
+            }
+
+            private bool RepositoryEqual(RepositoryNode a, RepositoryNode b)
+            {
+                return N(a.Name) == N(b.Name) &&
+                       N(a.Address) == N(b.Address) &&
+                       NoteKeys(a.NoteIds, _a).SetEquals(NoteKeys(b.NoteIds, _b));
+            }
+
+            private static bool HeaderEqual(GedcomHeader a, GedcomHeader b)
+            {
+                // The file creation date is left out: it differs between every two exports.
+                return N(a.SourceSoftware) == N(b.SourceSoftware) &&
+                       N(a.SoftwareVersion) == N(b.SoftwareVersion) &&
+                       N(a.GedcomVersion) == N(b.GedcomVersion) &&
+                       N(a.CharacterEncoding) == N(b.CharacterEncoding);
+            }
+
+            private static string N(string value) => TreeNodeKeys.NormalizeName(value);
+
+            /// <summary>
+            /// Normalizes a SEX value for comparison. "U" (unknown) and a missing
+            /// value mean the same thing, so both compare as empty.
+            /// </summary>
+            internal static string Sex(string value)
+            {
+                string s = N(value);
+                return s == "u" ? string.Empty : s;
+            }
+
+            private static HashSet<string> TextSet(IEnumerable<string> values) =>
+                values.Select(N).Where(v => v.Length > 0).ToHashSet();
+
+            private static IEnumerable<string> EventSourceIds(IEnumerable<GedcomEvent> events) =>
+                events.SelectMany(e => e.SourceIds);
+
+            private static HashSet<string> SourceKeys(IEnumerable<string> ids, GedcomTreeContext ctx) =>
+                ids.Select(id => ctx.Sources.TryGetValue(id, out var s) ? TreeNodeKeys.GetKey(s)! : "(unresolved source)")
+                   .ToHashSet();
+
+            private static HashSet<string> NoteKeys(IEnumerable<string> ids, GedcomTreeContext ctx) =>
+                ids.Select(id => ctx.Notes.TryGetValue(id, out var n) ? TreeNodeKeys.GetKey(n)! : "(unresolved note)")
+                   .ToHashSet();
+
+            private static HashSet<string> PersonKeys(IEnumerable<string> ids, GedcomTreeContext ctx) =>
+                ids.Select(id => ctx.Individuals.TryGetValue(id, out var p) ? TreeNodeKeys.GetKey(p)! : "(unresolved person)")
+                   .ToHashSet();
+
+            private static string RepositoryKey(string id, GedcomTreeContext ctx)
+            {
+                if (string.IsNullOrEmpty(id)) return string.Empty;
+                return ctx.Repositories.TryGetValue(id, out var r) ? TreeNodeKeys.GetKey(r)! : "(unresolved repository)";
+            }
         }
     }
 }

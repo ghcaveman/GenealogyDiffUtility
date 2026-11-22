@@ -11,9 +11,15 @@ namespace GenealogyDiffUtility
         public string FullName { get; set; } = string.Empty;
 
         /// <summary>
+        /// Names from the second and later NAME lines (married names, AKAs, etc.).
+        /// The first NAME line is the preferred name and goes in <see cref="FullName"/>.
+        /// </summary>
+        public List<string> AlternateNames { get; } = new();
+
+        /// <summary>
         /// Used to disambiguate records that share the same name and have no birth
         /// date, so that the stable identity key remains unique within a tree.
-        /// Set by <see cref="DiffTreeViewModel.LoadTree"/>.
+        /// Set by <see cref="TreeNodeKeys.AssignCollisionIndices"/>.
         /// </summary>
         public int CollisionIndex { get; set; } = 1;
 
@@ -33,6 +39,9 @@ namespace GenealogyDiffUtility
 
         // Pointers to notes attached to this person or their events
         public List<string> NoteIds { get; set; } = new();
+
+        // Note text written directly on the record ("1 NOTE some text") rather than as a pointer
+        public List<string> InlineNotes { get; } = new();
 
         /// <summary>
         /// All events (birth, death, burial, baptism, census, residence, etc.)

@@ -61,3 +61,20 @@ Desktop.ini
 *.psess
 *.vsp
 *.vspx
+
+## ==========================================
+## Genealogy data
+## ==========================================
+# Real family trees contain living people's details; keep them out of git.
+*.ged
+# ...except the test fixture, which is committed on purpose. Because it is
+# re-included here, it is never ignored: new copies can be added normally and
+# changes to it always show up in git status.
+!FamilyTreeTest.ged
+
+## ==========================================
+## Installer build outputs
+## ==========================================
+publish/
+uninstall-files.nsh
+GenealogyDiffUtility-Setup*.exe

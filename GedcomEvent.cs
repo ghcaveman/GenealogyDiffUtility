@@ -34,6 +34,9 @@ namespace GenealogyDiffUtility
         // Pointers to notes attached to this event
         public List<string> NoteIds { get; set; } = new();
 
+        // Note text written directly on the event ("2 NOTE some text") rather than as a pointer
+        public List<string> InlineNotes { get; } = new();
+
         /// <summary>
         /// True when this event is an internal system tag (e.g., "_PPEXCLUDE",
         /// "_FSLINK") rather than a real genealogical event. Internal tags start
@@ -47,7 +50,7 @@ namespace GenealogyDiffUtility
 
         /// <summary>
         /// Formats the event for display in the details view, e.g.
-        /// "Birth (24 AUG 1938) - New Rochelle, New York" or
+        /// "Birth (3 MAR 1901) - Springfield, Ohio" or
         /// "Ethnicity - White".
         /// </summary>
         public string DisplayName

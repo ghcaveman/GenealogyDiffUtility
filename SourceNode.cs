@@ -14,6 +14,9 @@ namespace GenealogyDiffUtility
         // Pointers to notes attached to this source
         public List<string> NoteIds { get; set; } = new();
 
+        // Note text written directly on the record ("1 NOTE some text") rather than as a pointer
+        public List<string> InlineNotes { get; } = new();
+
         /// <summary>
         /// Display-only sub-nodes showing which individuals reference this source.
         /// These appear beneath this source when the Detail view (the "Details" checkbox)

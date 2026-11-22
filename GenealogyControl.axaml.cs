@@ -134,13 +134,13 @@ namespace GenealogyDiffUtility
 
                 try
                 {
-                    string rawText = await File.ReadAllTextAsync(filePath);
+                    string rawText = await File.ReadAllTextAsync(filePath, GedcomParser.DetectEncoding(filePath));
                     GedcomTreeContext context = GedcomParser.Parse(filePath);
                     vm.LoadTree(context, Path.GetFileName(filePath), rawText);
                 }
                 catch (Exception ex)
                 {
-                    vm.RawFileText = $"Failed to parse GEDCOM file:\n{ex.Message}";
+                    vm.RawFileText = $"Failed to load GEDCOM file:\n{ex.GetType().Name}: {ex.Message}";
                 }
             }
         }

@@ -9,7 +9,10 @@
     
     <!-- Optimizes deployment file sizes for cross-platform single executable delivery -->
     <PublishSingleFile>true</PublishSingleFile>
-    <SelfContained>true</SelfContained>
+    <!-- Self-contained whenever a target platform is given (dotnet publish -r win-x64 etc.),
+         so installed copies don't need a separately installed .NET runtime. Plain builds
+         stay framework-dependent so the test project can reference this one. -->
+    <SelfContained Condition="'$(RuntimeIdentifier)' != ''">true</SelfContained>
   </PropertyGroup>
 
   <ItemGroup>
