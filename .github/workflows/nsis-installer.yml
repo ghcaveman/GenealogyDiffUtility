@@ -57,11 +57,6 @@ jobs:
     - name: Publish Linux Binaries
       run: dotnet publish GenealogyDiffUtility.csproj -c Release -r linux-x64 --self-contained true -p:PublishSingleFile=true -o ./AppDir/usr/bin
 
-    - name: Install System Dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y imagemagick
-
     - name: Construct AppImage Shell Structure
       run: |
         mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
@@ -76,8 +71,8 @@ jobs:
         Categories=Development;Utility;
         EOF
         
-        convert -size 256x256 xc:transparent AppDir/GenealogyDiffUtility.png
-        cp AppDir/GenealogyDiffUtility.png AppDir/usr/share/icons/hicolor/256x256/apps/GenealogyDiffUtility.png
+        cp TwoSideBySideTrees-256.png AppDir/GenealogyDiffUtility.png
+        cp TwoSideBySideTrees-256.png AppDir/usr/share/icons/hicolor/256x256/apps/GenealogyDiffUtility.png
         
         cat <<EOF > AppDir/AppRun
         #!/bin/sh
@@ -134,14 +129,17 @@ jobs:
         
         cp ./publish-mac-bin/GenealogyDiffUtility "GenealogyDiffUtility.app/Contents/MacOS/"
         chmod +x "GenealogyDiffUtility.app/Contents/MacOS/GenealogyDiffUtility"
+        cp TwoSideBySideTrees.icns "GenealogyDiffUtility.app/Contents/Resources/GenealogyDiffUtility.icns"
         
         cat <<EOF > "GenealogyDiffUtility.app/Contents/Info.plist"
         <?xml version="1.0" encoding="UTF-8"?>
-        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://apple.com">
+        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
         <plist version="1.0">
         <dict>
             <key>CFBundleExecutable</key>
             <string>GenealogyDiffUtility</string>
+            <key>CFBundleIconFile</key>
+            <string>GenealogyDiffUtility.icns</string>
             <key>CFBundleIdentifier</key>
             <string>com.ghcaveman.genealogydiffutility</string>
             <key>CFBundleName</key>
@@ -163,6 +161,7 @@ jobs:
         brew install create-dmg
         create-dmg \
           --volname "GenealogyDiffUtility Setup" \
+          --volicon "TwoSideBySideTrees.icns" \
           --window-size 500 300 \
           --icon-size 100 \
           --icon "GenealogyDiffUtility.app" 175 120 \

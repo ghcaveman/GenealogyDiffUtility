@@ -19,14 +19,18 @@
             <TextBlock Text="{Binding SourceSoftware}"/>
             <TextBlock Text="| Version:" FontWeight="SemiBold" Margin="10,0,0,0"/>
             <TextBlock Text="{Binding GedcomVersion}"/>
-            <Button Content="▲" Click="OnNavigateUpClick" Margin="15,0,0,0" Padding="6,2" ToolTip.Tip="Previous mismatch" x:Name="UpButton"/>
-            <Button Content="▼" Click="OnNavigateDownClick" Padding="6,2" ToolTip.Tip="Next mismatch" x:Name="DownButton"/>
-            <CheckBox Content="Details" IsChecked="{Binding ShowDetails, Mode=TwoWay}" VerticalAlignment="Center" Margin="15,0,0,0" ToolTip.Tip="Show spouses, children, events, and notes beneath individuals; spouses, children, and events beneath families; and references beneath notes, sources, and repositories"/>
         </StackPanel>
         
         <TabControl Grid.Row="2">
             <TabItem Header="Tree">
-                <TreeView x:Name="TreeView" ItemsSource="{Binding TreeNodes}">
+                <TreeView x:Name="TreeView" ItemsSource="{Binding TreeNodes}"
+                          SelectionMode="Multiple"
+                          KeyDown="OnTreeKeyDown">
+                    <TreeView.ContextMenu>
+                        <ContextMenu>
+                            <MenuItem Header="Copy" InputGesture="Ctrl+C" Click="OnCopyClick"/>
+                        </ContextMenu>
+                    </TreeView.ContextMenu>
                     <TreeView.Styles>
                         <Style Selector="TreeViewItem">
                             <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"/>

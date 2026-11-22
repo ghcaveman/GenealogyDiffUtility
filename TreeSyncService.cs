@@ -66,5 +66,12 @@ namespace GenealogyDiffUtility
 
         /// <summary>The new selection value when <see cref="SelectedSet"/> is true.</summary>
         public bool IsSelectedValue { get; set; }
+
+        /// <summary>
+        /// True when the node was selected while other nodes in the source tree
+        /// were already selected (Ctrl/Shift multi-select), so the receiving tree
+        /// should add to its selection rather than replace it.
+        /// </summary>
+        public bool SelectionIsAdditive { get; set; }
     }
-}
+}

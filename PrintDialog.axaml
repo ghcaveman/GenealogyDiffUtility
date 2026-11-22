@@ -1,0 +1,39 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d"
+        x:Class="GenealogyDiffUtility.PrintDialog"
+        Title="Print"
+        Icon="avares://GenealogyDiffUtility/TwoSideBySideTrees.ico"
+        Width="380"
+        SizeToContent="Height"
+        CanResize="False"
+        ShowInTaskbar="False"
+        WindowStartupLocation="CenterOwner">
+
+    <StackPanel Margin="20" Spacing="14">
+        <StackPanel Spacing="6">
+            <TextBlock Text="Print" FontWeight="SemiBold"/>
+            <RadioButton x:Name="BothTreesRadio" GroupName="Content" Content="Both trees, side by side" IsChecked="True"
+                         IsCheckedChanged="OnContentChanged"/>
+            <RadioButton x:Name="LeftTreeRadio" GroupName="Content" Content="Left tree only" IsCheckedChanged="OnContentChanged"/>
+            <RadioButton x:Name="RightTreeRadio" GroupName="Content" Content="Right tree only" IsCheckedChanged="OnContentChanged"/>
+            <RadioButton x:Name="DifferencesRadio" GroupName="Content" Content="Differences (diff report)" IsCheckedChanged="OnContentChanged"/>
+        </StackPanel>
+
+        <StackPanel x:Name="RowsPanel" Spacing="6">
+            <TextBlock Text="Tree rows" FontWeight="SemiBold"/>
+            <RadioButton x:Name="AllRowsRadio" GroupName="Rows" Content="All rows" IsChecked="True"/>
+            <RadioButton x:Name="ExpandedRowsRadio" GroupName="Rows" Content="Only rows expanded on screen"/>
+        </StackPanel>
+
+        <CheckBox x:Name="DetailsCheckBox" Content="Include details"
+                  ToolTip.Tip="Spouses, children, events, notes, and references. Starts out matching the Details checkbox in the main window."/>
+
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,6,0,0">
+            <Button Content="Cancel" Click="OnCancelClick" IsCancel="True" Width="80" Margin="0,0,10,0"/>
+            <Button Content="Print..." Click="OnPrintClick" IsDefault="True" Width="80"/>
+        </StackPanel>
+    </StackPanel>
+</Window>

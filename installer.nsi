@@ -10,6 +10,10 @@ Unicode true
 Name "${APPNAME}"
 OutFile "GenealogyDiffUtility-Setup.exe"
 
+; Icon for the installer and uninstaller .exe files and their windows
+Icon "${__FILEDIR__}\TwoSideBySideTrees.ico"
+UninstallIcon "${__FILEDIR__}\TwoSideBySideTrees.ico"
+
 ; Enforce standard native 64-bit installation path alignment
 InstallDir "$PROGRAMFILES64\${APPNAME}"
 ; Reuse the previous install location when upgrading

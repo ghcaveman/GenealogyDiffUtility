@@ -168,6 +168,62 @@ public class ComparisonTests
     }
 
     [Fact]
+    public void DetailedDiff_NamesTheRecordAboveItsDetailDifferences()
+    {
+        var withEvent = ParseText(SingleEvent);
+        var withoutEvent = ParseText(Head + "0 @I1@ INDI\n1 NAME Mary /Rossi/\n1 BIRT\n2 DATE 1 JAN 1900\n0 TRLR\n");
+
+        string report = TreeDiffGenerator.Generate(withEvent, withoutEvent, includeDetails: true);
+        string heading = "  [DIFFERENT] " + withEvent.Individuals.Values.Single().DisplayName;
+        int headingAt = report.IndexOf(heading, StringComparison.Ordinal);
+        int detailAt = report.IndexOf("[MISSING] Event: Marital Status - Married", StringComparison.Ordinal);
+
+        Assert.True(headingAt >= 0, "expected a heading naming the individual");
+        Assert.True(detailAt > headingAt, "expected the detail line under the heading");
+    }
+
+    [Fact]
+    public void DetailedDiff_NoHeadingWhenDetailsMatch()
+    {
+        var a = ParseText(SingleEvent);
+        var b = ParseText(SingleEvent);
+
+        string report = TreeDiffGenerator.Generate(a, b, includeDetails: true);
+        Assert.DoesNotContain("[DIFFERENT]", report);
+    }
+
+    [Fact]
+    public void DetailedDiff_SummaryCountsRecordAndDetailDifferences()
+    {
+        var withEvent = ParseText(SingleEvent);
+        var withoutEvent = ParseText(Head + "0 @I1@ INDI\n1 NAME Mary /Rossi/\n1 BIRT\n2 DATE 1 JAN 1900\n" +
+                                            "0 @I2@ INDI\n1 NAME Ann /Rossi/\n0 TRLR\n");
+
+        string report = TreeDiffGenerator.Generate(withEvent, withoutEvent, includeDetails: true, out var summary);
+        var individuals = summary.Get("Individuals")!;
+
+        Assert.Equal(0, individuals.Missing);
+        Assert.Equal(1, individuals.Extra);             // Ann is only in the second file
+        Assert.Equal(1, individuals.Different);         // Mary's events differ
+        Assert.Equal(1, individuals.DetailDifferences); // one missing event
+        Assert.Equal(2, individuals.RecordDifferences);
+        Assert.StartsWith("=== Summary ===", report);
+        Assert.Contains("Individuals: 2 differences", report);
+    }
+
+    [Fact]
+    public void MainWindow_DetailsOnByDefault_AndTopBarShowsCounts()
+    {
+        var main = new MainWindowViewModel();
+        Assert.True(main.ShowDetails);
+        Assert.True(main.LeftTree.ShowDetails);
+        Assert.True(main.RightTree.ShowDetails);
+
+        var (loaded, _, _) = LoadPair(SingleEvent, Head + "0 @I1@ INDI\n1 NAME Mary /Rossi/\n1 BIRT\n2 DATE 1 JAN 1900\n0 TRLR\n");
+        Assert.Contains("Individuals: 1 (1 details)", loaded.DiffSummaryText);
+    }
+
+    [Fact]
     public void Diff_DuplicateRecordsAreReported_NotHidden()
     {
         var one = ParseText(Head + "0 @I1@ INDI\n1 NAME John /Doe/\n1 BIRT\n2 DATE 1900\n0 TRLR\n");

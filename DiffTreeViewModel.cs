@@ -239,10 +239,27 @@ namespace GenealogyDiffUtility
                 _context.Individuals.Count == 0)
             {
                 DiffText = "Load two files to compare.";
+                DiffSummary = null;
                 return;
             }
 
-            DiffText = TreeDiffGenerator.Generate(_context, OtherTree._context, _showDetails);
+            DiffText = TreeDiffGenerator.Generate(_context, OtherTree._context, _showDetails, out var summary);
+            DiffSummary = summary;
+        }
+
+        private DiffSummary? _diffSummary;
+        /// <summary>
+        /// Difference counts from the latest comparison (this tree against the
+        /// other tree), or null until both files are loaded.
+        /// </summary>
+        public DiffSummary? DiffSummary
+        {
+            get => _diffSummary;
+            private set
+            {
+                _diffSummary = value;
+                OnPropertyChanged();
+            }
         }
 
         /// <summary>
@@ -728,7 +745,10 @@ namespace GenealogyDiffUtility
                 ExpandedSet = e.PropertyName == nameof(TreeNodeBase.IsExpanded),
                 IsExpandedValue = tn.IsExpanded,
                 SelectedSet = e.PropertyName == nameof(TreeNodeBase.IsSelected),
-                IsSelectedValue = tn.IsSelected
+                IsSelectedValue = tn.IsSelected,
+                SelectionIsAdditive = e.PropertyName == nameof(TreeNodeBase.IsSelected) &&
+                                      tn.IsSelected &&
+                                      _nodeMap.Values.Count(n => n.IsSelected) > 1
             });
         }
 
@@ -744,7 +764,8 @@ namespace GenealogyDiffUtility
                 // The other tree selected a record this tree doesn't have. Clear this
                 // tree's selection so it no longer highlights an unrelated record
                 // (and so mismatch navigation continues from the other tree's position).
-                if (e.SelectedSet && e.IsSelectedValue)
+                // During a multi-select, leave the existing selection alone.
+                if (e.SelectedSet && e.IsSelectedValue && !e.SelectionIsAdditive)
                 {
                     foreach (var other in _nodeMap.Values)
                     {
@@ -771,12 +792,17 @@ namespace GenealogyDiffUtility
 
             if (e.SelectedSet && tn.IsSelected != e.IsSelectedValue)
             {
-                // Clear selection on all other nodes first
-                foreach (var other in _nodeMap.Values)
+                // For a plain (single) selection, clear the other nodes first.
+                // For a Ctrl/Shift multi-select, mirror just this node so the
+                // receiving tree keeps the same set of selected records.
+                if (e.IsSelectedValue && !e.SelectionIsAdditive)
                 {
-                    if (other.IsSelected && !ReferenceEquals(other, tn))
+                    foreach (var other in _nodeMap.Values)
                     {
-                        other.IsSelected = false;
+                        if (other.IsSelected && !ReferenceEquals(other, tn))
+                        {
+                            other.IsSelected = false;
+                        }
                     }
                 }
                 tn.IsSelected = e.IsSelectedValue;

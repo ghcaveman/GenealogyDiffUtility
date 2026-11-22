@@ -8,6 +8,7 @@
         x:DataType="vm:IndividualEditViewModel"
         x:CompileBindings="False"
         Title="Edit Individual"
+        Icon="avares://GenealogyDiffUtility/TwoSideBySideTrees.ico"
         Width="580"
         Height="620"
         WindowStartupLocation="CenterOwner">

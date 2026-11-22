@@ -5,6 +5,8 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- Icon for the .exe (Explorer, taskbar, Start menu shortcut, Add/Remove Programs) -->
+    <ApplicationIcon>TwoSideBySideTrees.ico</ApplicationIcon>
     <DefaultItemExcludes>$(DefaultItemExcludes);GenealogyDiffUtility.Tests\**</DefaultItemExcludes>
     
     <!-- Optimizes deployment file sizes for cross-platform single executable delivery -->
@@ -17,6 +19,11 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="GenealogyDiffUtility.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Window title-bar icon, loaded as avares://GenealogyDiffUtility/TwoSideBySideTrees.ico -->
+    <AvaloniaResource Include="TwoSideBySideTrees.ico" />
   </ItemGroup>
 
   <ItemGroup>

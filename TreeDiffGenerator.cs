@@ -5,6 +5,38 @@ using System.Text;
 
 namespace GenealogyDiffUtility
 {
+    /// <summary>Difference counts for one category (Individuals, Families...).</summary>
+    internal sealed class DiffCategoryCounts
+    {
+        public string Name { get; init; } = string.Empty;
+        public int Matches { get; set; }
+        public int Missing { get; set; }
+        public int Extra { get; set; }
+
+        /// <summary>Records found in both trees whose events or sources differ.</summary>
+        public int Different { get; set; }
+
+        /// <summary>Event and source differences within the <see cref="Different"/> records.</summary>
+        public int DetailDifferences { get; set; }
+
+        /// <summary>Records that are missing, extra, or present in both but different.</summary>
+        public int RecordDifferences => Missing + Extra + Different;
+    }
+
+    /// <summary>Difference counts for a whole comparison.</summary>
+    internal sealed class DiffSummary
+    {
+        public List<DiffCategoryCounts> Categories { get; } = new();
+
+        /// <summary>True when events and sources were compared (Details on).</summary>
+        public bool IncludesDetails { get; set; }
+
+        public int RecordDifferences => Categories.Sum(c => c.RecordDifferences);
+        public int DetailDifferences => Categories.Sum(c => c.DetailDifferences);
+
+        public DiffCategoryCounts? Get(string name) => Categories.FirstOrDefault(c => c.Name == name);
+    }
+
     /// <summary>
     /// Generates a plain-text comparison report between two parsed GEDCOM trees.
     /// Reports matches, records missing from the other tree, and records that
@@ -81,35 +113,43 @@ namespace GenealogyDiffUtility
             return result;
         }
 
-        public static string Generate(GedcomTreeContext thisCtx, GedcomTreeContext otherCtx, bool includeDetails)
+        public static string Generate(GedcomTreeContext thisCtx, GedcomTreeContext otherCtx, bool includeDetails) =>
+            Generate(thisCtx, otherCtx, includeDetails, out _);
+
+        /// <summary>
+        /// Builds the report and also returns its difference counts, which the
+        /// window shows in the top bar.
+        /// </summary>
+        public static string Generate(GedcomTreeContext thisCtx, GedcomTreeContext otherCtx, bool includeDetails, out DiffSummary summary)
         {
             var sb = new StringBuilder();
             var totals = new Totals();
+            summary = new DiffSummary { IncludesDetails = includeDetails };
 
-            AppendSection(sb, "Individuals", totals,
+            AppendSection(sb, "Individuals", totals, summary,
                 thisCtx.Individuals.Values.OrderBy(p => p.DisplayName).ThenBy(p => p.Id),
                 otherCtx.Individuals.Values.OrderBy(p => p.DisplayName).ThenBy(p => p.Id),
                 p => TreeNodeKeys.GetKey(p)!, p => p.DisplayName,
                 includeDetails
-                    ? (a, b) => AppendRecordDetails(sb, a.Events, b.Events, AllSources(a.SourceIds, a.Events, thisCtx), AllSources(b.SourceIds, b.Events, otherCtx), totals)
+                    ? (a, b) => AppendRecordDetails(sb, a.DisplayName, a.Events, b.Events, AllSources(a.SourceIds, a.Events, thisCtx), AllSources(b.SourceIds, b.Events, otherCtx), totals)
                     : null,
                 includeDetails ? p => AppendRecordDetailsMissing(sb, p.Events, AllSources(p.SourceIds, p.Events, thisCtx), totals) : null);
 
-            AppendSection(sb, "Families", totals,
+            AppendSection(sb, "Families", totals, summary,
                 thisCtx.Families.Values.OrderBy(f => f.DisplayName).ThenBy(f => f.Id),
                 otherCtx.Families.Values.OrderBy(f => f.DisplayName).ThenBy(f => f.Id),
                 f => TreeNodeKeys.GetKey(f)!, f => f.DisplayName,
                 includeDetails
-                    ? (a, b) => AppendRecordDetails(sb, a.Events, b.Events, AllSources(a.SourceIds, a.Events, thisCtx), AllSources(b.SourceIds, b.Events, otherCtx), totals)
+                    ? (a, b) => AppendRecordDetails(sb, a.DisplayName, a.Events, b.Events, AllSources(a.SourceIds, a.Events, thisCtx), AllSources(b.SourceIds, b.Events, otherCtx), totals)
                     : null,
                 includeDetails ? f => AppendRecordDetailsMissing(sb, f.Events, AllSources(f.SourceIds, f.Events, thisCtx), totals) : null);
 
-            AppendSection(sb, "Sources", totals,
+            AppendSection(sb, "Sources", totals, summary,
                 thisCtx.Sources.Values.OrderBy(s => s.Title).ThenBy(s => s.Id),
                 otherCtx.Sources.Values.OrderBy(s => s.Title).ThenBy(s => s.Id),
                 s => TreeNodeKeys.GetKey(s)!, s => s.Title, null, null);
 
-            AppendSection(sb, "Repositories", totals,
+            AppendSection(sb, "Repositories", totals, summary,
                 thisCtx.Repositories.Values.OrderBy(r => r.Name).ThenBy(r => r.Id),
                 otherCtx.Repositories.Values.OrderBy(r => r.Name).ThenBy(r => r.Id),
                 r => TreeNodeKeys.GetKey(r)!, r => r.Name, null, null);
@@ -129,15 +169,45 @@ namespace GenealogyDiffUtility
                 sb.AppendLine($"Extra: {totals.Extra} ({100.0 * totals.Extra / total:F1}%)");
             }
 
+            return BuildSummaryBlock(summary) + sb.ToString();
+        }
+
+        /// <summary>
+        /// The "=== Summary ===" block at the top of the report: how many records
+        /// differ in each category and, with Details on, how many event and
+        /// source differences they contain.
+        /// </summary>
+        private static string BuildSummaryBlock(DiffSummary summary)
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine("=== Summary ===");
+            foreach (var c in summary.Categories)
+            {
+                var parts = new List<string> { $"{c.Missing} missing", $"{c.Extra} extra" };
+                if (summary.IncludesDetails && (c.Name == "Individuals" || c.Name == "Families"))
+                {
+                    parts.Add($"{c.Different} with different details ({c.DetailDifferences} detail differences)");
+                }
+                sb.AppendLine($"{c.Name}: {c.RecordDifferences} differences - {string.Join(", ", parts)}");
+            }
+
+            sb.Append($"Total: {summary.RecordDifferences} record differences");
+            sb.AppendLine(summary.IncludesDetails
+                ? $", {summary.DetailDifferences} detail differences"
+                : " (turn on Details to compare events and sources)");
+            sb.AppendLine();
             return sb.ToString();
         }
 
-        private static void AppendSection<T>(StringBuilder sb, string title, Totals totals,
+        private static void AppendSection<T>(StringBuilder sb, string title, Totals totals, DiffSummary summary,
             IEnumerable<T> thisItems, IEnumerable<T> otherItems,
             Func<T, string> key, Func<T, string> label,
-            Action<T, T>? matchedDetails, Action<T>? missingDetails)
+            Func<T, T, int>? matchedDetails, Action<T>? missingDetails)
             where T : class
         {
+            var counts = new DiffCategoryCounts { Name = title };
+            summary.Categories.Add(counts);
+
             if (title != "Individuals") sb.AppendLine();
             sb.AppendLine($"=== {title} ===");
 
@@ -152,7 +222,12 @@ namespace GenealogyDiffUtility
             {
                 if (matchedByThis.TryGetValue(item, out var other))
                 {
-                    matchedDetails?.Invoke(item, other);
+                    int detailDiffs = matchedDetails?.Invoke(item, other) ?? 0;
+                    if (detailDiffs > 0)
+                    {
+                        counts.Different++;
+                        counts.DetailDifferences += detailDiffs;
+                    }
                 }
                 else
                 {
@@ -166,7 +241,14 @@ namespace GenealogyDiffUtility
                 sb.AppendLine($"  [EXTRA] {label(item)}{DuplicateNote(match.ThisKeys, key(item))}");
             }
 
-            sb.AppendLine($"Matches: {match.Matched.Count} | Missing: {match.Missing.Count} | Extra: {match.Extra.Count}");
+            counts.Matches = match.Matched.Count;
+            counts.Missing = match.Missing.Count;
+            counts.Extra = match.Extra.Count;
+
+            string differentNote = matchedDetails != null
+                ? $" | Different: {counts.Different} ({counts.DetailDifferences} detail differences)"
+                : string.Empty;
+            sb.AppendLine($"Matches: {match.Matched.Count} | Missing: {match.Missing.Count} | Extra: {match.Extra.Count}{differentNote}");
             totals.Matches += match.Matched.Count;
             totals.Missing += match.Missing.Count;
             totals.Extra += match.Extra.Count;
@@ -178,25 +260,42 @@ namespace GenealogyDiffUtility
         private static string DuplicateNote(HashSet<string> otherSideKeys, string key) =>
             otherSideKeys.Contains(key) ? " (duplicate)" : string.Empty;
 
-        private static void AppendRecordDetails(StringBuilder sb,
+        /// <summary>
+        /// Compares the events and sources of a record found in both trees. When
+        /// anything differs, writes a "[DIFFERENT] name" heading so the detail
+        /// lines beneath it say which individual or family they belong to.
+        /// Returns the number of detail differences found.
+        /// </summary>
+        private static int AppendRecordDetails(StringBuilder sb, string label,
             IEnumerable<GedcomEvent> thisEvents, IEnumerable<GedcomEvent> otherEvents,
             IEnumerable<SourceNode> thisSources, IEnumerable<SourceNode> otherSources, Totals totals)
         {
+            var lines = new List<string>();
+
             var events = Match(thisEvents.Where(e => !e.IsInternal), otherEvents.Where(e => !e.IsInternal), EventKey);
             foreach (var evt in events.Missing)
-                sb.AppendLine($"      [MISSING] Event: {evt.DisplayName}{DuplicateNote(events.OtherKeys, EventKey(evt))}");
+                lines.Add($"      [MISSING] Event: {evt.DisplayName}{DuplicateNote(events.OtherKeys, EventKey(evt))}");
             foreach (var evt in events.Extra)
-                sb.AppendLine($"      [EXTRA] Event: {evt.DisplayName}{DuplicateNote(events.ThisKeys, EventKey(evt))}");
+                lines.Add($"      [EXTRA] Event: {evt.DisplayName}{DuplicateNote(events.ThisKeys, EventKey(evt))}");
 
             var sources = Match(thisSources, otherSources, s => TreeNodeKeys.GetKey(s)!);
             foreach (var src in sources.Missing)
-                sb.AppendLine($"      [MISSING] Source: {src.Title}{DuplicateNote(sources.OtherKeys, TreeNodeKeys.GetKey(src)!)}");
+                lines.Add($"      [MISSING] Source: {src.Title}{DuplicateNote(sources.OtherKeys, TreeNodeKeys.GetKey(src)!)}");
             foreach (var src in sources.Extra)
-                sb.AppendLine($"      [EXTRA] Source: {src.Title}{DuplicateNote(sources.ThisKeys, TreeNodeKeys.GetKey(src)!)}");
+                lines.Add($"      [EXTRA] Source: {src.Title}{DuplicateNote(sources.ThisKeys, TreeNodeKeys.GetKey(src)!)}");
+
+            if (lines.Count > 0)
+            {
+                sb.AppendLine($"  [DIFFERENT] {label}");
+                foreach (var line in lines)
+                    sb.AppendLine(line);
+            }
 
             totals.Matches += events.Matched.Count + sources.Matched.Count;
             totals.Missing += events.Missing.Count + sources.Missing.Count;
             totals.Extra += events.Extra.Count + sources.Extra.Count;
+
+            return lines.Count;
         }
 
         private static void AppendRecordDetailsMissing(StringBuilder sb, IEnumerable<GedcomEvent> events,

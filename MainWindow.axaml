@@ -10,20 +10,39 @@
         x:Class="GenealogyDiffUtility.MainWindow"
         x:DataType="vm:MainWindowViewModel"
         Title="Genealogy Diff Utility"
+        Icon="avares://GenealogyDiffUtility/TwoSideBySideTrees.ico"
         Width="1000" 
         Height="600" 
         MinWidth="640" 
         MinHeight="400">
 
-    <Grid ColumnDefinitions="*, *">
+    <Grid ColumnDefinitions="*, *" RowDefinitions="Auto, *">
+        <!-- Top bar spanning both panes: options that apply to both trees -->
+        <Border Grid.Row="0" Grid.ColumnSpan="2" BorderBrush="Gray" BorderThickness="0,0,0,1" Padding="15,8">
+            <DockPanel LastChildFill="True">
+                <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" Spacing="15" Margin="0,0,15,0">
+                    <StackPanel Orientation="Horizontal" Spacing="5">
+                        <Button Content="▲" Click="OnNavigateUpClick" Padding="6,2" ToolTip.Tip="Previous mismatch"/>
+                        <Button Content="▼" Click="OnNavigateDownClick" Padding="6,2" ToolTip.Tip="Next mismatch"/>
+                    </StackPanel>
+                    <CheckBox Content="Details" IsChecked="{Binding ShowDetails, Mode=TwoWay}" VerticalAlignment="Center"
+                              ToolTip.Tip="Show spouses, children, events, and notes beneath individuals; spouses, children, and events beneath families; and references beneath notes, sources, and repositories (both trees)"/>
+                    <Button Content="Print..." Click="OnPrintClick" ToolTip.Tip="Print the trees or the differences"/>
+                </StackPanel>
+                <TextBlock Text="{Binding DiffSummaryText}" VerticalAlignment="Center" Foreground="DimGray"
+                           TextTrimming="CharacterEllipsis"
+                           ToolTip.Tip="Records missing from the right file, extra in the right file, or present in both with different events or sources (left file compared against right). The full breakdown is at the top of the Diff tab."/>
+            </DockPanel>
+        </Border>
+
         <!-- Left Side Pane Display Panel Component -->
-        <Border Grid.Column="0" BorderBrush="Gray" BorderThickness="0,0,1,0" Padding="15">
-            <local:GenealogyControl DataContext="{Binding LeftTree}"/>
+        <Border Grid.Row="1" Grid.Column="0" BorderBrush="Gray" BorderThickness="0,0,1,0" Padding="15">
+            <local:GenealogyControl x:Name="LeftControl" Side="Left" DataContext="{Binding LeftTree}" HideVerticalScrollBar="True"/>
         </Border>
 
         <!-- Right Side Pane Display Panel Component -->
-        <Border Grid.Column="1" Padding="15">
-            <local:GenealogyControl DataContext="{Binding RightTree}"/>
+        <Border Grid.Row="1" Grid.Column="1" Padding="15">
+            <local:GenealogyControl x:Name="RightControl" Side="Right" DataContext="{Binding RightTree}"/>
         </Border>
     </Grid>
 </Window>
