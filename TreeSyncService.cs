@@ -73,5 +73,17 @@ namespace GenealogyDiffUtility
         /// should add to its selection rather than replace it.
         /// </summary>
         public bool SelectionIsAdditive { get; set; }
+
+        /// <summary>
+        /// The record that changed in the sending tree, and that tree. Used when
+        /// the receiving tree has no node with the same path: a person or family
+        /// whose birth or marriage date differs between the files has a different
+        /// key on each side, so the receiver looks for its one-to-one partner by
+        /// name instead (the same pairing the Diff report uses for [CHANGED]).
+        /// </summary>
+        public object? SourceNode { get; set; }
+
+        /// <inheritdoc cref="SourceNode"/>
+        public DiffTreeViewModel? SourceTree { get; set; }
     }
 }

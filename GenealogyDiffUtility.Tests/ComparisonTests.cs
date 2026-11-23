@@ -280,6 +280,323 @@ public class ComparisonTests
     }
 
     [Fact]
+    public void Diff_CorrectedBirthDateIsOneChangedPerson()
+    {
+        var left = ParseText(Head + "0 @I1@ INDI\n1 NAME Caterina /Altomare/\n1 BIRT\n2 DATE 25 JAN 1877\n0 TRLR\n");
+        var right = ParseText(Head + "0 @I5@ INDI\n1 NAME Caterina /Altomare/\n1 BIRT\n2 DATE 1877\n0 TRLR\n");
+
+        string report = TreeDiffGenerator.Generate(left, right, includeDetails: true, out var summary);
+        var individuals = summary.Get("Individuals")!;
+
+        Assert.Contains("  [CHANGED]   Altomare, Caterina", report);
+        Assert.Contains("Birth date: left:  25 JAN 1877", report);
+        Assert.Contains("right: 1877", report);
+        Assert.DoesNotContain("[MISSING]   Altomare", report);
+        Assert.DoesNotContain("[EXTRA]     Altomare", report);
+        Assert.Equal(1, individuals.Changed);
+        Assert.Equal(0, individuals.Missing);
+        Assert.Equal(0, individuals.Extra);
+        Assert.Equal(1, individuals.RecordDifferences);
+        // The birth events themselves differ too, and are listed under the person.
+        Assert.Contains("[CHANGED]   Event: Birth (25 JAN 1877)", report);
+    }
+
+    [Fact]
+    public void Diff_BirthDateAddedOnOneSideIsOneChangedPerson()
+    {
+        var left = ParseText(Head + "0 @I1@ INDI\n1 NAME John /Doe/\n0 TRLR\n");
+        var right = ParseText(Head + "0 @I1@ INDI\n1 NAME John /Doe/\n1 BIRT\n2 DATE 1900\n0 TRLR\n");
+
+        TreeDiffGenerator.Generate(left, right, includeDetails: false, out var summary);
+        Assert.Equal(1, summary.Get("Individuals")!.Changed);
+        Assert.Equal(1, summary.RecordDifferences);
+    }
+
+    [Fact]
+    public void Diff_AmbiguousSameNamePeopleAreNotPaired()
+    {
+        // Two unmatched John Does on the left, one on the right: no telling which is which.
+        var left = ParseText(Head + "0 @I1@ INDI\n1 NAME John /Doe/\n1 BIRT\n2 DATE 1900\n" +
+                                    "0 @I2@ INDI\n1 NAME John /Doe/\n1 BIRT\n2 DATE 1925\n0 TRLR\n");
+        var right = ParseText(Head + "0 @I1@ INDI\n1 NAME John /Doe/\n1 BIRT\n2 DATE 1901\n0 TRLR\n");
+
+        TreeDiffGenerator.Generate(left, right, includeDetails: false, out var summary);
+        var individuals = summary.Get("Individuals")!;
+        Assert.Equal(0, individuals.Changed);
+        Assert.Equal(2, individuals.Missing);
+        Assert.Equal(1, individuals.Extra);
+    }
+
+    [Fact]
+    public void Diff_FamilyWhoseSpouseBirthDateChangedIsOneChangedFamily()
+    {
+        // Loaded into the trees (not just parsed) so spouses are linked to the family.
+        const string couple = "0 @F1@ FAM\n1 HUSB @I1@\n1 WIFE @I2@\n0 TRLR\n";
+        var (_, left, right) = LoadPair(
+            Head + "0 @I1@ INDI\n1 NAME Carmine /Altimare/\n1 BIRT\n2 DATE 1773\n0 @I2@ INDI\n1 NAME Rosa /Bruno/\n" + couple,
+            Head + "0 @I1@ INDI\n1 NAME Carmine /Altimare/\n1 BIRT\n2 DATE ABT 1773\n0 @I2@ INDI\n1 NAME Rosa /Bruno/\n" + couple);
+
+        string report = TreeDiffGenerator.Generate(left, right, includeDetails: false, out var summary);
+        var families = summary.Get("Families")!;
+
+        Assert.Equal(1, families.Changed);
+        Assert.Equal(0, families.Missing);
+        Assert.Equal(0, families.Extra);
+        Assert.Contains("Husband: left:", report);
+    }
+
+    [Fact]
+    public void Navigation_StopsAtPersonWhoseOnlyDifferenceIsAnEvent()
+    {
+        // Same person, same birth; the right file adds a residence.
+        var (main, _, _) = LoadPair(
+            Head + "0 @I1@ INDI\n1 NAME Mary /Rossi/\n1 BIRT\n2 DATE 1 JAN 1900\n0 TRLR\n",
+            Head + "0 @I1@ INDI\n1 NAME Mary /Rossi/\n1 BIRT\n2 DATE 1 JAN 1900\n1 RESI\n2 DATE 1930\n0 TRLR\n");
+
+        main.NavigateToNextMismatch();
+        Assert.Equal("Individual:mary rossi|1 jan 1900", main.LeftTree.GetSelectedNodeKey());
+    }
+
+    [Fact]
+    public void Navigation_StopsOnceAtAChangedPerson()
+    {
+        var (main, _, _) = LoadPair(
+            Head + "0 @I1@ INDI\n1 NAME Caterina /Altomare/\n1 BIRT\n2 DATE 25 JAN 1877\n0 TRLR\n",
+            Head + "0 @I5@ INDI\n1 NAME Caterina /Altomare/\n1 BIRT\n2 DATE 1877\n0 TRLR\n");
+
+        main.NavigateToNextMismatch();
+        Assert.Equal("Individual:caterina altomare|25 jan 1877", main.LeftTree.GetSelectedNodeKey());
+
+        // The right tree follows to its copy of the same person...
+        Assert.Equal("Individual:caterina altomare|1877", main.RightTree.GetSelectedNodeKey());
+
+        // ...and there's no second stop at that copy.
+        main.NavigateToNextMismatch();
+        Assert.Equal("Individual:caterina altomare|25 jan 1877", main.LeftTree.GetSelectedNodeKey());
+        Assert.Equal("Individual:caterina altomare|1877", main.RightTree.GetSelectedNodeKey());
+    }
+
+    [Fact]
+    public void Sync_SelectingAChangedPersonSelectsTheirCopyInTheOtherTree()
+    {
+        var (main, left, right) = LoadPair(
+            Head + "0 @I1@ INDI\n1 NAME Caterina /Altomare/\n1 BIRT\n2 DATE 25 JAN 1877\n0 TRLR\n",
+            Head + "0 @I5@ INDI\n1 NAME Caterina /Altomare/\n1 BIRT\n2 DATE 1877\n0 TRLR\n");
+
+        right.Individuals.Values.Single().IsSelected = true;
+        Assert.True(left.Individuals.Values.Single().IsSelected);
+
+        right.Individuals.Values.Single().IsSelected = false;
+        Assert.False(left.Individuals.Values.Single().IsSelected);
+    }
+
+    [Fact]
+    public void Sync_DoesNotGuessBetweenSameNamePeople()
+    {
+        var (_, left, right) = LoadPair(
+            Head + "0 @I1@ INDI\n1 NAME John /Doe/\n1 BIRT\n2 DATE 1900\n0 @I2@ INDI\n1 NAME John /Doe/\n1 BIRT\n2 DATE 1925\n0 TRLR\n",
+            Head + "0 @I1@ INDI\n1 NAME John /Doe/\n1 BIRT\n2 DATE 1901\n0 TRLR\n");
+
+        right.Individuals.Values.Single().IsSelected = true;
+        Assert.DoesNotContain(left.Individuals.Values, p => p.IsSelected);
+    }
+
+    [Fact]
+    public void Diff_MarksTheMoreSpecificDateAndPlace()
+    {
+        var left = ParseText(Head + "0 @I1@ INDI\n1 NAME Mary /Rossi/\n1 RESI\n2 DATE 1930\n2 PLAC Philadelphia\n" +
+                                    "1 IMMI\n2 DATE ABT 1898\n2 PLAC Ellis Island\n0 TRLR\n");
+        var right = ParseText(Head + "0 @I1@ INDI\n1 NAME Mary /Rossi/\n1 RESI\n2 DATE 1930\n2 PLAC Philadelphia, Pennsylvania\n" +
+                                     "1 IMMI\n2 DATE 12 MAR 1898\n2 PLAC Ellis Island\n0 TRLR\n");
+
+        string report = TreeDiffGenerator.Generate(left, right, includeDetails: true);
+        var lines = report.Split('\n').Select(l => l.TrimEnd('\r')).ToList();
+
+        Assert.Contains(lines, l => l.Contains("right: Philadelphia, Pennsylvania") && l.EndsWith("◀ more specific"));
+        Assert.Contains(lines, l => l.Contains("left:  Philadelphia") && !l.Contains("more specific"));
+        Assert.Contains(lines, l => l.Contains("right: 12 MAR 1898") && l.EndsWith("◀ more specific"));
+    }
+
+    [Fact]
+    public void DateSpecificity_Rules()
+    {
+        Assert.Equal(1, DateSpecificity.Compare("25 JAN 1877", "1877"));
+        Assert.Equal(1, DateSpecificity.Compare("JAN 1877", "1877"));
+        Assert.Equal(-1, DateSpecificity.Compare("ABT 1885", "10 JUL 1885"));
+        Assert.Equal(1, DateSpecificity.Compare("1885", "ABT 1885"));
+        Assert.Equal(1, DateSpecificity.Compare("1877", "BET 1870 AND 1880"));
+        Assert.Equal(1, DateSpecificity.Compare("1877", ""));
+        Assert.Equal(0, DateSpecificity.Compare("1877", "1878"));            // disagree
+        Assert.Equal(0, DateSpecificity.Compare("25 JAN 1877", "26 JAN 1877"));
+        Assert.Equal(0, DateSpecificity.Compare("1890", "BET 1870 AND 1880")); // outside the range
+        Assert.Equal(0, DateSpecificity.Compare("ABT 1877", "EST 1877"));
+        Assert.Equal(0, DateSpecificity.Compare("some time", "1877"));        // unreadable
+    }
+
+    [Fact]
+    public void PlaceSpecificity_Rules()
+    {
+        Assert.Equal(1, TreeDiffGenerator.PlaceSpecificity("Belsito, Cosenza, Calabria, Italy", "Italy"));
+        Assert.Equal(-1, TreeDiffGenerator.PlaceSpecificity("Philadelphia", "Philadelphia, Pennsylvania"));
+        Assert.Equal(0, TreeDiffGenerator.PlaceSpecificity("Belsito, Italy", "Mangone, Italy"));
+        Assert.Equal(0, TreeDiffGenerator.PlaceSpecificity("Philadelphia", "Pittsburgh"));
+        Assert.Equal(-1, TreeDiffGenerator.PlaceSpecificity(", ,", "Genova"));
+    }
+
+    [Fact]
+    public void Navigation_IgnoresEventDifferencesTheReportIgnores()
+    {
+        var (main, _, _) = LoadPair(FlagsNoDescriptions, NoFlagsWithDescriptions);
+
+        main.NavigateToNextMismatch();
+        Assert.Null(main.LeftTree.GetSelectedNodeKey());
+        Assert.Null(main.RightTree.GetSelectedNodeKey());
+    }
+
+    // One person whose birth citation has gained notes and media (as after a
+    // citation merge that pooled other citations' notes onto it).
+    private const string CitationPlain = Head +
+        "0 @I1@ INDI\n1 NAME Josephine /Cerino/\n1 BIRT\n2 DATE 1890\n2 PLAC Italy\n2 SOUR @S1@\n" +
+        "0 @S1@ SOUR\n1 TITL familysearch.org\n" +
+        "0 @N1@ NOTE https://www.familysearch.org/ark:/61903/1:1:K5Q3-61L\n" +
+        "0 @N2@ NOTE United States, Census, 1910, entry for Edward C Fuller\n" +
+        "0 @O1@ OBJE\n1 FILE C:\\Media\\Fuller, Harry Jay - 1910Census.jpg\n0 TRLR\n";
+
+    private const string CitationWithPooledNotes = Head +
+        "0 @I9@ INDI\n1 NAME Josephine /Cerino/\n1 BIRT\n2 DATE 1890\n2 PLAC Italy\n2 SOUR @S7@\n" +
+        "3 NOTE @N1@\n3 NOTE @N2@\n3 OBJE @O1@\n" +
+        "0 @S7@ SOUR\n1 TITL familysearch.org\n" +
+        "0 @N1@ NOTE https://www.familysearch.org/ark:/61903/1:1:K5Q3-61L\n" +
+        "0 @N2@ NOTE United States, Census, 1910, entry for Edward C Fuller\n" +
+        "0 @O1@ OBJE\n1 FILE /home/me/media/Fuller, Harry Jay - 1910Census.jpg\n0 TRLR\n";
+
+    [Fact]
+    public void Parser_ReadsCitationsOneByOne()
+    {
+        var ctx = ParseText(Head +
+            "0 @I1@ INDI\n1 NAME Ann /Doe/\n1 SOUR @S1@\n2 PAGE p. 12\n2 QUAY 3\n2 DATA\n3 DATE 1 JAN 1950\n2 NOTE @N1@\n2 OBJE @O1@\n" +
+            "1 NOTE @N2@\n1 OBJE\n2 FILE c:\\pics\\ann.jpg\n" +
+            "1 BIRT\n2 DATE 1900\n2 SOUR @S1@\n3 PAGE p. 3\n3 NOTE inline citation note\n2 NOTE @N3@\n2 OBJE @O1@\n" +
+            "0 @O1@ OBJE\n1 FILE c:\\pics\\census.jpg\n2 TITL Census\n0 TRLR\n");
+        var ann = ctx.Individuals.Values.Single();
+
+        var c = Assert.Single(ann.Citations);
+        Assert.Equal("@S1@", c.SourceId);
+        Assert.Equal("p. 12", c.Page.Trim());
+        Assert.Equal("3", c.Quality);
+        Assert.Equal("1 JAN 1950", c.Date);
+        Assert.Equal(new[] { "@N1@" }, c.NoteIds);
+        Assert.Equal(new[] { "@O1@" }, c.Media);
+        Assert.Equal(new[] { "@N2@" }, ann.DirectNoteIds);
+        Assert.Equal(new[] { @"file:c:\pics\ann.jpg" }, ann.Media);
+
+        var birth = ann.Events.Single();
+        var ec = Assert.Single(birth.Citations);
+        Assert.Equal("p. 3", ec.Page.Trim());
+        Assert.Equal(new[] { "inline citation note" }, ec.InlineNotes);
+        Assert.Equal(new[] { "@N3@" }, birth.DirectNoteIds);
+        Assert.Equal(new[] { "@O1@" }, birth.Media);
+        Assert.Equal(@"c:\pics\census.jpg", ctx.Media["@O1@"].File);
+    }
+
+    [Fact]
+    public void DetailedDiff_ReportsNotesAndMediaAddedToACitation()
+    {
+        string report = TreeDiffGenerator.Generate(ParseText(CitationWithPooledNotes), ParseText(CitationPlain),
+            includeDetails: true, out var summary);
+
+        Assert.Contains("  [DIFFERENT] Cerino, Josephine", report);
+        Assert.Contains("      [DIFFERENT] Event: Birth (1890) - Italy", report);
+        Assert.Contains("          [CHANGED]   Citation: familysearch.org", report);
+        Assert.Contains("Notes: 2 only in the left file:", report);
+        Assert.Contains("Media: 1 only in the left file: Fuller, Harry Jay - 1910Census.jpg", report);
+        Assert.Equal(1, summary.DetailDifferences);
+    }
+
+    [Fact]
+    public void DetailedDiff_SameCitationNotesInDifferentFoldersAreEqual()
+    {
+        // Same notes and the same media file name, different folders and record numbers.
+        var other = CitationWithPooledNotes.Replace("/home/me/media/", "D:\\Old\\").Replace("@N1@", "@N99@");
+        TreeDiffGenerator.Generate(ParseText(CitationWithPooledNotes), ParseText(other), includeDetails: true, out var summary);
+        Assert.Equal(0, summary.DetailDifferences);
+        Assert.Equal(0, summary.RecordDifferences);
+    }
+
+    [Fact]
+    public void Diff_ReportsPersonFieldDifferencesEvenWithDetailsOff()
+    {
+        var a = ParseText(Head + "0 @I1@ INDI\n1 NAME Ann /Doe/\n1 SEX F\n1 BIRT\n2 DATE 1900\n1 DEAT\n2 DATE 1970\n0 TRLR\n");
+        var b = ParseText(Head + "0 @I1@ INDI\n1 NAME Ann /Doe/\n1 SEX M\n1 BIRT\n2 DATE 1900\n1 DEAT\n2 DATE 1971\n0 TRLR\n");
+
+        string report = TreeDiffGenerator.Generate(a, b, includeDetails: false, out var summary);
+        Assert.Contains("  [DIFFERENT] Doe, Ann", report);
+        Assert.Contains("Sex:", report);
+        Assert.Contains("Death date:", report);
+        Assert.Equal(2, summary.Get("Individuals")!.DetailDifferences);
+    }
+
+    [Fact]
+    public void DetailedDiff_AdoptedOfDescriptionIsNotADifference()
+    {
+        var a = ParseText(Head + "0 @I1@ INDI\n1 NAME Kimberly W /White/\n1 ADOP\n2 TYPE Adopted of White, Kimberly W\n0 TRLR\n");
+        var b = ParseText(Head + "0 @I1@ INDI\n1 NAME Kimberly W /White/\n1 ADOP\n0 TRLR\n");
+        TreeDiffGenerator.Generate(a, b, includeDetails: true, out var summary);
+        Assert.Equal(0, summary.RecordDifferences);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void Navigation_StopsAtExactlyTheRecordsTheReportLists(bool details)
+    {
+        // A mix: pooled citation notes, a sex difference, an extra person, a matching person.
+        string left = CitationWithPooledNotes.Replace("0 TRLR\n",
+            "0 @I2@ INDI\n1 NAME Ann /Doe/\n1 SEX F\n0 @I3@ INDI\n1 NAME Bob /Roe/\n0 TRLR\n");
+        string right = CitationPlain.Replace("0 TRLR\n",
+            "0 @I2@ INDI\n1 NAME Ann /Doe/\n1 SEX M\n0 @I3@ INDI\n1 NAME Bob /Roe/\n0 @I4@ INDI\n1 NAME Cy /Poe/\n0 TRLR\n");
+        var (main, _, _) = LoadPair(left, right);
+        main.ShowDetails = details;
+
+        var summary = main.LeftTree.DiffSummary!;
+        Assert.Equal(summary.RecordDifferences, CountArrowStops(main));
+        Assert.Equal(details ? 3 : 2, summary.RecordDifferences); // Josephine only differs in her citation's details
+    }
+
+    [Fact]
+    public void Navigation_StopsAtEachExtraCopyOfARecord_LikeTheReport()
+    {
+        // Two copies of Ann on the left (one extra), and a note whose text is repeated on the right.
+        var (main, _, _) = LoadPair(
+            Head + "0 @I1@ INDI\n1 NAME Ann /Doe/\n0 @I2@ INDI\n1 NAME Ann /Doe/\n0 @N1@ NOTE Same text\n0 TRLR\n",
+            Head + "0 @I1@ INDI\n1 NAME Ann /Doe/\n0 @N1@ NOTE Same text\n0 @N2@ NOTE Same text\n0 TRLR\n");
+
+        var summary = main.LeftTree.DiffSummary!;
+        Assert.Equal(2, summary.RecordDifferences);
+        Assert.Equal(2, CountArrowStops(main));
+    }
+
+    /// <summary>Presses ▼ until the selection stops moving; returns how many records it stopped at.</summary>
+    private static int CountArrowStops(MainWindowViewModel main)
+    {
+        var seen = new HashSet<object>(ReferenceEqualityComparer.Instance);
+        object? lastLeft = null, lastRight = null;
+        for (int i = 0; i < 100; i++)
+        {
+            main.NavigateToNextMismatch();
+            var left = main.LeftTree.GetSelectedNode();
+            var right = main.RightTree.GetSelectedNode();
+            if (i > 0 && ReferenceEquals(left, lastLeft) && ReferenceEquals(right, lastRight)) break;
+            lastLeft = left;
+            lastRight = right;
+            // A stop selects a record in the left tree, or one only the right tree has.
+            var stop = left != null && !seen.Contains(left) ? left : right;
+            if (stop != null) seen.Add(stop);
+        }
+        return seen.Count;
+    }
+
+    [Fact]
     public void MainWindow_DetailsOnByDefault_AndTopBarShowsCounts()
     {
         var main = new MainWindowViewModel();

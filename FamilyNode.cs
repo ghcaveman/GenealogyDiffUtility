@@ -20,6 +20,15 @@ namespace GenealogyDiffUtility
         // Note text written directly on the record ("1 NOTE some text") rather than as a pointer
         public List<string> InlineNotes { get; } = new();
 
+        /// <summary>Citations, one by one, with their page, date, confidence, notes and media.</summary>
+        public List<GedcomCitation> Citations { get; } = new();
+
+        /// <summary>Note pointers attached directly here (not via a citation or event).</summary>
+        public List<string> DirectNoteIds { get; } = new();
+
+        /// <summary>Media attached directly here: pointers ("@O1@") or "file:&lt;path&gt;".</summary>
+        public List<string> Media { get; } = new();
+
         // Pointers to sources that prove this family exists
         public List<string> SourceIds { get; set; } = new();
 

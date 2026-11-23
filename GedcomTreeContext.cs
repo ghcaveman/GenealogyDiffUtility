@@ -14,5 +14,6 @@ namespace GenealogyDiffUtility
         public Dictionary<string, SourceNode> Sources { get; set; } = new(StringComparer.Ordinal);
         public Dictionary<string, RepositoryNode> Repositories { get; set; } = new(StringComparer.Ordinal);
         public Dictionary<string, NoteNode> Notes { get; set; } = new(StringComparer.Ordinal);
+        public Dictionary<string, GedcomMedia> Media { get; set; } = new(StringComparer.Ordinal);
     }
 }

@@ -9,11 +9,12 @@ Built with .NET 10 and [Avalonia UI](https://avaloniaui.net/). Runs on Windows, 
 ## Features
 
 - **Side-by-side trees.** Each file is shown as a tree of Header, Individuals (grouped by surname), Families, Sources, Repositories and Notes.
-- **Synchronized navigation.** Expanding or selecting a record on one side does the same to the matching record on the other side. The two trees scroll together with a single scrollbar.
-- **Mismatch navigation.** The ▲ / ▼ buttons jump to the previous or next record that differs between the two files.
+- **Synchronized navigation.** Expanding or selecting a record on one side does the same to the matching record on the other side, including a person or family reported as `[CHANGED]`. The two trees scroll together with a single scrollbar.
+- **Mismatch navigation.** The ▲ / ▼ buttons jump to the previous or next record that differs between the two files. They use the same comparison as the Diff report, so they stop at exactly the records it lists, including each extra copy of a duplicated record.
 - **Details view.** One **Details** checkbox, on by default, applies to both trees. It shows spouses, children, events (with their sources) and notes under individuals and families, and back-references under notes, sources and repositories.
 - **Difference counts.** The top bar shows how many individuals, families, sources and repositories differ and, with Details on, how many event and source differences there are.
-- **Diff report.** The **Diff** tab starts with a summary of the counts, then lists matches, missing records and extra records for each category, with an overall score. With Details on, it also compares events and sources and marks each person or family whose details differ as `[DIFFERENT]`, with the differences listed beneath. A key at the top says which file `[MISSING]` and `[EXTRA]` refer to. An event that was edited (a refined date or place, say) appears once as `[CHANGED]` with just the differing values for each side. Things that differ only in how programs write them are ignored: case and spacing, the GEDCOM "Y" event flag, and generated descriptions such as "Birth of Smith, John".
+- **Diff report.** The **Diff** tab starts with a summary of the counts, then lists matches, missing records and extra records for each category, with an overall score. With Details on, it also compares events and sources and marks each person or family whose details differ as `[DIFFERENT]`, with the differences listed beneath. A key at the top says which file `[MISSING]` and `[EXTRA]` refer to. An event that was edited (a refined date or place, say) appears once as `[CHANGED]` with just the differing values for each side. So does a person whose birth date was corrected or added, and a family whose spouse changed that way, as long as the name pairs them up unambiguously. Where one side's date or place is clearly more specific (25 JAN 1877 vs 1877, or "Belsito, Cosenza, Italy" vs "Italy"), it is marked `◀ more specific`. Things that differ only in how programs write them are ignored: case and spacing, the GEDCOM "Y" event flag, and generated descriptions such as "Birth of Smith, John".
+- **What is compared.** For every person: name, sex, birth, death and alternate names; for every family: spouses, marriage and children; for sources and repositories: repository and notes. With Details on, also each record's events, citations (source, page, date, confidence), notes and media, and the notes and media attached to each event and each citation. Linked records are compared by content (a source by its title, a note by its text, a media item by its file name), never by GEDCOM record number, so two exports that number things differently still match.
 - **Raw text view.** The **Text** tab shows the GEDCOM file as loaded.
 - **Copy.** Select one or more rows (Ctrl+click / Shift+click), then press Ctrl+C or right-click → **Copy**. You get indented plain text, in tree order.
 - **Print.** **Print…** lets you print both trees side by side, a single tree, or the differences report. You can include or leave out details, and print all rows or only the expanded ones. The page opens in your browser's print dialog, so you can also save it as a PDF.
@@ -28,10 +29,12 @@ GEDCOM record IDs (`@I0001@` and so on) usually differ between exports of the sa
 - **Sources:** title, author and publication info.
 - **Repositories:** name and address.
 - **Notes:** the note text.
+- **Citations:** the source and the page; citations of the same source whose page differs are paired up and shown as `[CHANGED]`.
+- **Media:** the file name (the folder is ignored, since it differs between computers).
 
 Names and text are normalized before comparing, so differences in case and spacing don't count as mismatches.
 
-Matching counts duplicates. If a record appears twice in one file and once in the other, one pair matches and the second copy is reported as a duplicate.
+Matching counts duplicates. If a record appears twice in one file and once in the other, one pair matches and the second copy is reported as a duplicate. When both files have several copies of a record, the copies are paired so that the fewest differences remain.
 
 ## Installing
 

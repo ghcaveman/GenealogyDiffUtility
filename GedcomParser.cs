@@ -26,7 +26,7 @@ namespace GenealogyDiffUtility
         // trailing space can be the only separator between two words.
         private static readonly HashSet<string> TextTags = new(StringComparer.Ordinal)
         {
-            "NOTE", "CONC", "CONT", "TITL", "AUTH", "PUBL", "TEXT", "ADDR", "ADR1", "ADR2", "ADR3"
+            "NOTE", "CONC", "CONT", "TITL", "AUTH", "PUBL", "TEXT", "ADDR", "ADR1", "ADR2", "ADR3", "PAGE"
         };
 
         static GedcomParser()
@@ -107,6 +107,13 @@ namespace GenealogyDiffUtility
             bool insideHeadSour = false;
             bool insideHeadGedc = false;
 
+            // Citations and media, tracked one by one for the comparison (see GedcomCitation)
+            GedcomMedia? currentMedia = null;
+            GedcomCitation? citation = null;
+            int citationLevel = 0;
+            List<string>? inlineMediaList = null;
+            int inlineMediaIndex = 0, inlineMediaLevel = 0;
+
             foreach (string rawLine in lines)
             {
                 // Leading whitespace is not significant; trailing whitespace can be
@@ -131,8 +138,13 @@ namespace GenealogyDiffUtility
                 }
                 text = null;
 
+                // A line at or above a citation's (or inline media's) level ends it.
+                if (citation != null && level <= citationLevel) citation = null;
+                if (inlineMediaList != null && level <= inlineMediaLevel) inlineMediaList = null;
+
                 if (level == 0)
                 {
+                    currentMedia = null;
                     currentIndividual = null;
                     currentFamily = null;
                     currentSource = null;
@@ -173,6 +185,10 @@ namespace GenealogyDiffUtility
                             currentRepository = new RepositoryNode { Id = id };
                             context.Repositories[id] = currentRepository;
                             break;
+                        case "OBJE":
+                            currentMedia = new GedcomMedia { Id = id };
+                            context.Media[id] = currentMedia;
+                            break;
                         case "NOTE":
                             var note = new NoteNode { Id = id };
                             currentNote = note;
@@ -210,6 +226,63 @@ namespace GenealogyDiffUtility
                     case "REPO" when currentRepository != null:
                         text = ParseRepositoryLine(currentRepository, level, tag, data);
                         break;
+
+                    case "OBJE" when currentMedia != null:
+                        if (tag == "FILE" && level == 1) currentMedia.File = data.Trim();
+                        else if (tag == "TITL" && currentMedia.Title.Length == 0) currentMedia.Title = data.Trim();
+                        break;
+                }
+
+                // People and families: also record citations, direct notes and media
+                // one by one, for the comparison.
+                if ((currentSection == "INDI" && currentIndividual != null) ||
+                    (currentSection == "FAM" && currentFamily != null))
+                {
+                    var recordCitations = currentIndividual?.Citations ?? currentFamily!.Citations;
+                    var recordNotes = currentIndividual?.DirectNoteIds ?? currentFamily!.DirectNoteIds;
+                    var recordMedia = currentIndividual?.Media ?? currentFamily!.Media;
+                    bool inEvent = currentEvent != null && level >= 2;
+
+                    if (inlineMediaList != null && tag == "FILE" && level == inlineMediaLevel + 1)
+                    {
+                        inlineMediaList[inlineMediaIndex] = "file:" + data.Trim();
+                    }
+                    else if (citation != null)
+                    {
+                        // A line inside the current citation.
+                        int depth = level - citationLevel;
+                        var c = citation;
+                        if (depth == 1 && tag == "PAGE")
+                        {
+                            c.Page = data;
+                            text ??= new TextTarget { Level = level, Get = () => c.Page, Set = v => c.Page = v };
+                        }
+                        else if (depth == 1 && tag == "QUAY") c.Quality = data;
+                        else if (depth == 2 && tag == "DATE") c.Date = data;
+                        else if (depth == 1 && tag == "NOTE") text ??= AddNote(c.NoteIds, c.InlineNotes, data, level);
+                        else if (depth == 1 && tag == "OBJE")
+                            AddMedia(c.Media, data, level, ref inlineMediaList, ref inlineMediaIndex, ref inlineMediaLevel);
+                    }
+                    else if (tag == "SOUR")
+                    {
+                        var c = new GedcomCitation();
+                        string value = data.Trim();
+                        if (value.Length > 1 && value.StartsWith("@") && value.EndsWith("@")) c.SourceId = value;
+                        else
+                        {
+                            c.InlineText = data;
+                            text ??= new TextTarget { Level = level, Get = () => c.InlineText, Set = v => c.InlineText = v };
+                        }
+                        (inEvent ? currentEvent!.Citations : recordCitations).Add(c);
+                        citation = c;
+                        citationLevel = level;
+                    }
+                    else if (tag == "NOTE" && level == 1) AddPointer(recordNotes, data);
+                    else if (tag == "NOTE" && level == 2 && inEvent) AddPointer(currentEvent!.DirectNoteIds, data);
+                    else if (tag == "OBJE" && level == 1)
+                        AddMedia(recordMedia, data, level, ref inlineMediaList, ref inlineMediaIndex, ref inlineMediaLevel);
+                    else if (tag == "OBJE" && level == 2 && inEvent)
+                        AddMedia(currentEvent!.Media, data, level, ref inlineMediaList, ref inlineMediaIndex, ref inlineMediaLevel);
                 }
             }
 
@@ -456,6 +529,25 @@ namespace GenealogyDiffUtility
         /// <summary>
         /// Adds a cross-reference pointer (e.g., "@S1@") to a list; other values are ignored.
         /// </summary>
+        /// <summary>
+        /// Adds a media pointer, or for media written inline ("1 OBJE" with a
+        /// "2 FILE" line below) a placeholder the FILE line fills in.
+        /// </summary>
+        private static void AddMedia(List<string> media, string data, int level,
+            ref List<string>? inlineList, ref int inlineIndex, ref int inlineLevel)
+        {
+            string trimmed = data.Trim();
+            if (trimmed.Length > 1 && trimmed.StartsWith("@") && trimmed.EndsWith("@"))
+            {
+                media.Add(trimmed);
+                return;
+            }
+            inlineList = media;
+            inlineIndex = media.Count;
+            inlineLevel = level;
+            media.Add("file:");
+        }
+
         private static void AddPointer(List<string> ids, string data)
         {
             string trimmed = data.Trim();

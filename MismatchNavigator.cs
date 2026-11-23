@@ -9,17 +9,23 @@ namespace GenealogyDiffUtility
     /// to the next or previous mismatch (a node missing from one tree,
     /// or a node whose data differs between the two trees).
     /// <para>
-    /// Records are compared by content, never by GEDCOM record Id: two exports
-    /// of the same tree usually number their records differently (@S55@ vs
-    /// @S00055@), so linked sources and notes are compared by their stable keys
-    /// and dates, places and names are compared after normalization
-    /// ("24 Aug 1938" equals "24 AUG 1938").
+    /// "Differs" is decided by <see cref="RecordComparer"/>, the same comparison
+    /// the Diff report uses, so the arrows stop at exactly the records the report
+    /// lists. Records are compared by content, never by GEDCOM record Id.
     /// </para>
     /// </summary>
     internal class MismatchNavigator
     {
         private DiffTreeViewModel? _left;
         private DiffTreeViewModel? _right;
+
+        // Where the last ▲/▼ press stopped. Kept because a second copy of a record
+        // (same key) can't be told apart from the first by its key alone.
+        private string? _lastStopKey;
+        private object? _lastStopNode;
+
+        // Marks the second, third... copy of a key within one tree ("key\u00012").
+        private const char CopySeparator = '\u0001';
 
         public void Attach(DiffTreeViewModel left, DiffTreeViewModel right)
         {
@@ -57,31 +63,53 @@ namespace GenealogyDiffUtility
             if (_left == null || _right == null) return;
             var other = ReferenceEquals(source, _left) ? _right : _left;
 
-            var sourceFlat = FlattenWithKeys(source);
-            var otherFlat = FlattenWithKeys(other);
+            // The Diff report's own comparison, so the arrows stop exactly at the
+            // records it lists (with Details on, that includes events, citations,
+            // notes and media).
+            var comparer = new RecordComparer(source.Context, other.Context, source.ShowDetails, ("this", "other"));
+
+            // Copies of the same record get their own position (key, key#2, ...),
+            // paired across the trees the way the Diff report pairs them, so each
+            // extra or differing copy is a stop of its own.
+            var (sourceFlat, otherFlat) = NumberCopies(FlattenWithKeys(source), FlattenWithKeys(other),
+                (a, b) => comparer.Compare(a, b).Count);
             var sourceNodes = FirstByKey(sourceFlat);
             var otherNodes = FirstByKey(otherFlat);
 
             var allKeys = MergeOrder(sourceFlat, otherFlat, sourceNodes);
             if (allKeys.Count == 0) return;
 
-            var comparer = new NodeComparer(source.Context, other.Context);
+            // A person or family whose identifying values changed (e.g. a corrected
+            // birth date) has a different key in each tree. The Diff report shows it
+            // once, as [CHANGED]; stop at it once too, at its copy in the source tree.
+            var otherHalfOfChanged = ChangedRecordPartners(sourceNodes, otherNodes);
+
             bool IsMismatch(string key)
             {
+                if (otherHalfOfChanged.Contains(key)) return false;
                 sourceNodes.TryGetValue(key, out var a);
                 otherNodes.TryGetValue(key, out var b);
+
+                // Group headings (Individuals, a surname...) are never stops of their
+                // own: a surname only one file has is reached through its people.
+                if ((a ?? b) is TreeGroupNode or SurnameGroupNode) return false;
                 if (a == null || b == null) return true;
-                return !comparer.NodesEqual(a, b);
+                return comparer.Compare(a, b).Count > 0;
             }
 
-            // The current position is the selected node in either tree (a record
-            // that exists only in the other tree is selected there).
-            int currentIndex = -1;
-            var selectedKey = source.GetSelectedNodeKey() ?? other.GetSelectedNodeKey();
-            if (selectedKey != null)
+            // The current position: the last stop if it is still selected, otherwise
+            // the selected node in either tree (a record that exists only in the
+            // other tree is selected there).
+            string? currentKey = null;
+            if (_lastStopNode is TreeNodeBase last && last.IsSelected)
             {
-                currentIndex = allKeys.IndexOf(selectedKey);
+                currentKey = _lastStopKey;
             }
+            else if ((source.GetSelectedNode() ?? other.GetSelectedNode()) is { } selected)
+            {
+                currentKey = sourceFlat.Concat(otherFlat).FirstOrDefault(x => ReferenceEquals(x.Node, selected)).Key;
+            }
+            int currentIndex = currentKey != null ? allKeys.IndexOf(currentKey) : -1;
 
             int i = currentIndex >= 0
                 ? currentIndex + direction
@@ -92,12 +120,43 @@ namespace GenealogyDiffUtility
                 var key = allKeys[i];
                 if (!IsMismatch(key)) continue;
 
+                object? stop = null;
                 if (sourceNodes.TryGetValue(key, out var inSource))
-                    source.SelectNode(inSource);
+                    source.SelectNode(stop = inSource);
                 else if (otherNodes.TryGetValue(key, out var inOther))
-                    other.SelectNode(inOther);
+                    other.SelectNode(stop = inOther);
+                _lastStopKey = key;
+                _lastStopNode = stop;
                 return;
             }
+        }
+
+        /// <summary>
+        /// Keys of records that exist only in the other tree but pair one-to-one,
+        /// by name, with a record that exists only in the source tree, using the
+        /// same rule as the Diff report's [CHANGED] records.
+        /// </summary>
+        private static HashSet<string> ChangedRecordPartners(Dictionary<string, object> sourceNodes,
+            Dictionary<string, object> otherNodes)
+        {
+            static Dictionary<string, List<string>> UnmatchedByPairKey(
+                Dictionary<string, object> nodes, Dictionary<string, object> otherSide) =>
+                nodes.Where(kv => !otherSide.ContainsKey(kv.Key))
+                     .Select(kv => (kv.Key, Pair: TreeDiffGenerator.RecordPairKey(kv.Value)))
+                     .Where(x => x.Pair.Length > 0)
+                     .GroupBy(x => x.Pair)
+                     .ToDictionary(g => g.Key, g => g.Select(x => x.Key).ToList());
+
+            var sourceOnly = UnmatchedByPairKey(sourceNodes, otherNodes);
+            var otherOnly = UnmatchedByPairKey(otherNodes, sourceNodes);
+
+            var partners = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var (pairKey, otherKeys) in otherOnly)
+            {
+                if (otherKeys.Count == 1 && sourceOnly.TryGetValue(pairKey, out var sourceKeys) && sourceKeys.Count == 1)
+                    partners.Add(otherKeys[0]);
+            }
+            return partners;
         }
 
         /// <summary>
@@ -151,6 +210,63 @@ namespace GenealogyDiffUtility
             return result;
         }
 
+        /// <summary>
+        /// Gives the second and later copies of a key their own key ("key",
+        /// "key\u00012", ...). Source copies are numbered in tree order; each other-tree
+        /// copy takes the number of the source copy it pairs with (fewest
+        /// differences, as in the Diff report), and leftover copies come after.
+        /// </summary>
+        private static (List<(string Key, object Node)> Source, List<(string Key, object Node)> Other) NumberCopies(
+            List<(string Key, object Node)> source, List<(string Key, object Node)> other, Func<object, object, int> distance)
+        {
+            static Dictionary<string, List<int>> Groups(List<(string Key, object Node)> flat)
+            {
+                var groups = new Dictionary<string, List<int>>(StringComparer.Ordinal);
+                for (int i = 0; i < flat.Count; i++)
+                {
+                    if (!groups.TryGetValue(flat[i].Key, out var g)) groups[flat[i].Key] = g = new List<int>();
+                    g.Add(i);
+                }
+                return groups;
+            }
+            static string Copy(string key, int n) => n == 1 ? key : key + CopySeparator + n;
+
+            var sourceGroups = Groups(source);
+            var otherGroups = Groups(other);
+            var sourceKeys = source.Select(x => x.Key).ToArray();
+            var otherKeys = other.Select(x => x.Key).ToArray();
+
+            foreach (var (key, si) in sourceGroups)
+            {
+                otherGroups.TryGetValue(key, out var oi);
+                oi ??= new List<int>();
+                if (si.Count == 1 && oi.Count <= 1) continue;
+
+                for (int n = 1; n < si.Count; n++) sourceKeys[si[n]] = Copy(key, n + 1);
+
+                var used = new bool[oi.Count];
+                foreach (var (a, b) in TreeDiffGenerator.PairCopies(
+                             si.Select(i => source[i].Node).ToList(), oi.Select(j => other[j].Node).ToList(), distance))
+                {
+                    otherKeys[oi[b]] = Copy(key, a + 1);
+                    used[b] = true;
+                }
+                int next = si.Count + 1;
+                for (int b = 0; b < oi.Count; b++)
+                {
+                    if (!used[b]) otherKeys[oi[b]] = Copy(key, next++);
+                }
+            }
+            foreach (var (key, oi) in otherGroups)
+            {
+                if (sourceGroups.ContainsKey(key)) continue;
+                for (int n = 1; n < oi.Count; n++) otherKeys[oi[n]] = Copy(key, n + 1);
+            }
+
+            return (source.Select((x, i) => (sourceKeys[i], x.Node)).ToList(),
+                    other.Select((x, i) => (otherKeys[i], x.Node)).ToList());
+        }
+
         private static Dictionary<string, object> FirstByKey(List<(string Key, object Node)> flat)
         {
             var map = new Dictionary<string, object>(StringComparer.Ordinal);
@@ -163,7 +279,7 @@ namespace GenealogyDiffUtility
 
         private static List<(string Key, object Node)> FlattenWithKeys(DiffTreeViewModel vm)
         {
-            var result = new List<(string, object)>();
+            var result = new List<(string Key, object Node)>();
             foreach (var group in vm.TreeNodes)
             {
                 var key = TreeNodeKeys.GetKey(group);
@@ -173,7 +289,9 @@ namespace GenealogyDiffUtility
                 }
                 FlattenChildrenWithKeys(group.Children, result);
             }
-            return result;
+            // A record can be reached by more than one path in the tree: count it once.
+            var seen = new HashSet<object>(ReferenceEqualityComparer.Instance);
+            return result.Where(x => seen.Add(x.Node)).ToList();
         }
 
         private static void FlattenChildrenWithKeys(IEnumerable<object> children, List<(string, object)> result)
@@ -190,129 +308,6 @@ namespace GenealogyDiffUtility
                 {
                     FlattenChildrenWithKeys(subChildren, result);
                 }
-            }
-        }
-
-        /// <summary>
-        /// Compares two nodes already matched by stable key, resolving each tree's
-        /// record pointers through that tree's own context.
-        /// </summary>
-        internal sealed class NodeComparer
-        {
-            private readonly GedcomTreeContext _a;
-            private readonly GedcomTreeContext _b;
-
-            public NodeComparer(GedcomTreeContext a, GedcomTreeContext b)
-            {
-                _a = a;
-                _b = b;
-            }
-
-            public bool NodesEqual(object a, object b)
-            {
-                return a switch
-                {
-                    IndividualNode ia => b is IndividualNode ib && IndividualEqual(ia, ib),
-                    FamilyNode fa => b is FamilyNode fb && FamilyEqual(fa, fb),
-                    SourceNode sa => b is SourceNode sb && SourceEqual(sa, sb),
-                    RepositoryNode ra => b is RepositoryNode rb && RepositoryEqual(ra, rb),
-                    NoteNode na => b is NoteNode nb && N(na.Text) == N(nb.Text),
-                    GedcomHeader ha => b is GedcomHeader hb && HeaderEqual(ha, hb),
-                    TreeGroupNode ga => b is TreeGroupNode gb && ga.Key == gb.Key,
-                    SurnameGroupNode sa => b is SurnameGroupNode sb && sa.Surname == sb.Surname,
-                    _ => ReferenceEquals(a, b)
-                };
-            }
-
-            private bool IndividualEqual(IndividualNode a, IndividualNode b)
-            {
-                return N(a.FullName) == N(b.FullName) &&
-                       Sex(a.Gender) == Sex(b.Gender) &&
-                       N(a.BirthDate) == N(b.BirthDate) &&
-                       N(a.BirthPlace) == N(b.BirthPlace) &&
-                       N(a.DeathDate) == N(b.DeathDate) &&
-                       N(a.DeathPlace) == N(b.DeathPlace) &&
-                       TextSet(a.AlternateNames).SetEquals(TextSet(b.AlternateNames)) &&
-                       SourceKeys(a.SourceIds, _a).SetEquals(SourceKeys(b.SourceIds, _b)) &&
-                       SourceKeys(EventSourceIds(a.Events), _a).SetEquals(SourceKeys(EventSourceIds(b.Events), _b)) &&
-                       NoteKeys(a.NoteIds, _a).SetEquals(NoteKeys(b.NoteIds, _b)) &&
-                       TextSet(a.InlineNotes).SetEquals(TextSet(b.InlineNotes));
-            }
-
-            private bool FamilyEqual(FamilyNode a, FamilyNode b)
-            {
-                // Husband/wife identity is already matched by the stable family key
-                // (built from their person keys), so here we only compare the
-                // remaining family-specific data.
-                return N(a.MarriageDate) == N(b.MarriageDate) &&
-                       N(a.MarriagePlace) == N(b.MarriagePlace) &&
-                       PersonKeys(a.ChildrenIds, _a).SetEquals(PersonKeys(b.ChildrenIds, _b)) &&
-                       SourceKeys(a.SourceIds, _a).SetEquals(SourceKeys(b.SourceIds, _b)) &&
-                       SourceKeys(EventSourceIds(a.Events), _a).SetEquals(SourceKeys(EventSourceIds(b.Events), _b)) &&
-                       NoteKeys(a.NoteIds, _a).SetEquals(NoteKeys(b.NoteIds, _b)) &&
-                       TextSet(a.InlineNotes).SetEquals(TextSet(b.InlineNotes));
-            }
-
-            private bool SourceEqual(SourceNode a, SourceNode b)
-            {
-                return N(a.Title) == N(b.Title) &&
-                       N(a.Author) == N(b.Author) &&
-                       N(a.PublicationInfo) == N(b.PublicationInfo) &&
-                       RepositoryKey(a.RepositoryId, _a) == RepositoryKey(b.RepositoryId, _b) &&
-                       NoteKeys(a.NoteIds, _a).SetEquals(NoteKeys(b.NoteIds, _b)) &&
-                       TextSet(a.InlineNotes).SetEquals(TextSet(b.InlineNotes));
-            }
-
-            private bool RepositoryEqual(RepositoryNode a, RepositoryNode b)
-            {
-                return N(a.Name) == N(b.Name) &&
-                       N(a.Address) == N(b.Address) &&
-                       NoteKeys(a.NoteIds, _a).SetEquals(NoteKeys(b.NoteIds, _b));
-            }
-
-            private static bool HeaderEqual(GedcomHeader a, GedcomHeader b)
-            {
-                // The file creation date is left out: it differs between every two exports.
-                return N(a.SourceSoftware) == N(b.SourceSoftware) &&
-                       N(a.SoftwareVersion) == N(b.SoftwareVersion) &&
-                       N(a.GedcomVersion) == N(b.GedcomVersion) &&
-                       N(a.CharacterEncoding) == N(b.CharacterEncoding);
-            }
-
-            private static string N(string value) => TreeNodeKeys.NormalizeName(value);
-
-            /// <summary>
-            /// Normalizes a SEX value for comparison. "U" (unknown) and a missing
-            /// value mean the same thing, so both compare as empty.
-            /// </summary>
-            internal static string Sex(string value)
-            {
-                string s = N(value);
-                return s == "u" ? string.Empty : s;
-            }
-
-            private static HashSet<string> TextSet(IEnumerable<string> values) =>
-                values.Select(N).Where(v => v.Length > 0).ToHashSet();
-
-            private static IEnumerable<string> EventSourceIds(IEnumerable<GedcomEvent> events) =>
-                events.SelectMany(e => e.SourceIds);
-
-            private static HashSet<string> SourceKeys(IEnumerable<string> ids, GedcomTreeContext ctx) =>
-                ids.Select(id => ctx.Sources.TryGetValue(id, out var s) ? TreeNodeKeys.GetKey(s)! : "(unresolved source)")
-                   .ToHashSet();
-
-            private static HashSet<string> NoteKeys(IEnumerable<string> ids, GedcomTreeContext ctx) =>
-                ids.Select(id => ctx.Notes.TryGetValue(id, out var n) ? TreeNodeKeys.GetKey(n)! : "(unresolved note)")
-                   .ToHashSet();
-
-            private static HashSet<string> PersonKeys(IEnumerable<string> ids, GedcomTreeContext ctx) =>
-                ids.Select(id => ctx.Individuals.TryGetValue(id, out var p) ? TreeNodeKeys.GetKey(p)! : "(unresolved person)")
-                   .ToHashSet();
-
-            private static string RepositoryKey(string id, GedcomTreeContext ctx)
-            {
-                if (string.IsNullOrEmpty(id)) return string.Empty;
-                return ctx.Repositories.TryGetValue(id, out var r) ? TreeNodeKeys.GetKey(r)! : "(unresolved repository)";
             }
         }
     }

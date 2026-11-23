@@ -673,6 +673,9 @@ namespace GenealogyDiffUtility
         /// <summary>
         /// Returns the stable key of the currently selected node, or null if none.
         /// </summary>
+        /// <summary>The selected node, or null if nothing is selected.</summary>
+        public object? GetSelectedNode() => _nodeMap.Values.FirstOrDefault(n => n.IsSelected);
+
         public string? GetSelectedNodeKey()
         {
             foreach (var tn in _nodeMap.Values)
@@ -755,7 +758,9 @@ namespace GenealogyDiffUtility
                 IsSelectedValue = tn.IsSelected,
                 SelectionIsAdditive = e.PropertyName == nameof(TreeNodeBase.IsSelected) &&
                                       tn.IsSelected &&
-                                      _nodeMap.Values.Count(n => n.IsSelected) > 1
+                                      _nodeMap.Values.Count(n => n.IsSelected) > 1,
+                SourceNode = tn,
+                SourceTree = this
             });
         }
 
@@ -766,6 +771,26 @@ namespace GenealogyDiffUtility
         public void ApplySync(TreeSyncEventArgs e)
         {
             var node = FindNodeByPath(e.Path);
+
+            // No node with that key here: if the record is a person or family whose
+            // identifying values changed between the files, follow its partner.
+            if (node == null && FindChangedPartner(e.SourceNode, e.SourceTree) is { } partner &&
+                FindPath(partner) is { } partnerPath)
+            {
+                node = partner;
+                e = new TreeSyncEventArgs
+                {
+                    Path = partnerPath,
+                    ExpandedSet = e.ExpandedSet,
+                    IsExpandedValue = e.IsExpandedValue,
+                    SelectedSet = e.SelectedSet,
+                    IsSelectedValue = e.IsSelectedValue,
+                    SelectionIsAdditive = e.SelectionIsAdditive,
+                    SourceNode = e.SourceNode,
+                    SourceTree = e.SourceTree
+                };
+            }
+
             if (node is not TreeNodeBase tn)
             {
                 // The other tree selected a record this tree doesn't have. Clear this
@@ -828,6 +853,37 @@ namespace GenealogyDiffUtility
             {
                 ScrollToNodeRequested?.Invoke(this, e);
             }
+        }
+
+        /// <summary>
+        /// The record in this tree that pairs one-to-one, by name, with
+        /// <paramref name="sourceRecord"/> when neither has a same-key match in the
+        /// other tree (e.g. "25 JAN 1877" here vs "1877" there). Null when there is
+        /// no such record or the pairing is ambiguous. Mirrors the Diff report's
+        /// [CHANGED] pairing.
+        /// </summary>
+        private object? FindChangedPartner(object? sourceRecord, DiffTreeViewModel? sourceTree)
+        {
+            if (sourceTree == null || sourceRecord is not (IndividualNode or FamilyNode)) return null;
+            string pairKey = TreeDiffGenerator.RecordPairKey(sourceRecord);
+            if (pairKey.Length == 0) return null;
+
+            IEnumerable<object> Records(DiffTreeViewModel tree) => sourceRecord is IndividualNode
+                ? tree.Context.Individuals.Values
+                : tree.Context.Families.Values;
+
+            var thisKeys = Records(this).Select(r => TreeNodeKeys.GetKey(r)!).ToHashSet(StringComparer.Ordinal);
+            var sourceKeys = Records(sourceTree).Select(r => TreeNodeKeys.GetKey(r)!).ToHashSet(StringComparer.Ordinal);
+
+            var sourceCandidates = Records(sourceTree)
+                .Where(r => !thisKeys.Contains(TreeNodeKeys.GetKey(r)!) && TreeDiffGenerator.RecordPairKey(r) == pairKey)
+                .Take(2).ToList();
+            if (sourceCandidates.Count != 1 || !ReferenceEquals(sourceCandidates[0], sourceRecord)) return null;
+
+            var candidates = Records(this)
+                .Where(r => !sourceKeys.Contains(TreeNodeKeys.GetKey(r)!) && TreeDiffGenerator.RecordPairKey(r) == pairKey)
+                .Take(2).ToList();
+            return candidates.Count == 1 ? candidates[0] : null;
         }
 
         /// <summary>
