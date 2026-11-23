@@ -51,25 +51,14 @@ namespace GenealogyDiffUtility
 
         public static string BuildHtml(MainWindowViewModel main, PrintOptions options)
         {
-            // Detail rows only exist while Details is on. If the print choice differs
-            // from the on-screen setting, switch it for the duration of the build.
-            bool originalDetails = main.ShowDetails;
-            bool switchDetails = options.Content != PrintContent.Differences &&
-                                 options.IncludeDetails != originalDetails;
-            if (switchDetails) main.ShowDetails = options.IncludeDetails;
-
-            try
+            // The trees on screen are only read, never changed: when the print's
+            // Details choice differs from the screen, detail rows are built (or left
+            // out) here, so expanded rows stay expanded.
+            return options.Content switch
             {
-                return options.Content switch
-                {
-                    PrintContent.Differences => BuildDiffPage(main, options),
-                    _ => BuildTreePage(main, options)
-                };
-            }
-            finally
-            {
-                if (switchDetails) main.ShowDetails = originalDetails;
-            }
+                PrintContent.Differences => BuildDiffPage(main, options),
+                _ => BuildTreePage(main, options)
+            };
         }
 
         private static string BuildDiffPage(MainWindowViewModel main, PrintOptions options)
@@ -142,14 +131,14 @@ namespace GenealogyDiffUtility
             {
                 foreach (var group in tree.TreeNodes)
                 {
-                    AppendRow(sb, group, 0, options);
+                    AppendRow(sb, tree, group, 0, options);
                 }
             }
 
             sb.Append("</section>");
         }
 
-        private static void AppendRow(StringBuilder sb, object item, int level, PrintOptions options)
+        private static void AppendRow(StringBuilder sb, DiffTreeViewModel tree, object item, int level, PrintOptions options)
         {
             string cls = TreeNodeText.IsGroupRow(item) ? "row group"
                        : TreeNodeText.IsDetailRow(item) ? "row detail"
@@ -162,10 +151,27 @@ namespace GenealogyDiffUtility
 
             if (options.ExpandedRowsOnly && !(item is TreeNodeBase { IsExpanded: true })) return;
 
-            foreach (var child in TreeNodeText.GetDisplayedChildren(item).ToList())
+            foreach (var child in ChildrenToPrint(tree, item, options))
             {
-                AppendRow(sb, child, level + 1, options);
+                AppendRow(sb, tree, child, level + 1, options);
             }
+        }
+
+        /// <summary>
+        /// The rows to print under a row. Records (people, families, sources,
+        /// repositories, notes) have only detail rows beneath them: those come from
+        /// the tree when its Details setting matches the print, are built fresh when
+        /// the print wants details the screen isn't showing, and are left out when
+        /// the print doesn't want them.
+        /// </summary>
+        private static IEnumerable<object> ChildrenToPrint(DiffTreeViewModel tree, object item, PrintOptions options)
+        {
+            bool isRecord = item is IndividualNode or FamilyNode or SourceNode or RepositoryNode or NoteNode;
+            if (!isRecord) return TreeNodeText.GetDisplayedChildren(item).ToList();
+            if (!options.IncludeDetails) return Array.Empty<object>();
+            return tree.ShowDetails
+                ? TreeNodeText.GetDisplayedChildren(item).ToList()
+                : tree.BuildDetailRows(item);
         }
 
         private static string WrapPage(string title, string subtitle, PrintOptions options, string body)

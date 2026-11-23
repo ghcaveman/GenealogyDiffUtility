@@ -99,55 +99,63 @@ namespace GenealogyDiffUtility
         }
 
         /// <summary>
-        /// Converts a GEDCOM date string (e.g., "24 AUG 1938", "1994", "ABT 1974")
-        /// to mm/dd/yyyy format. Returns the original string if it cannot be parsed.
+        /// Formats a GEDCOM date for display without making it look more exact than it is:
+        /// "24 AUG 1938" becomes 08/24/1938, "AUG 1938" becomes 08/1938, "1938" stays 1938,
+        /// and qualifiers are kept ("ABT 1773" becomes "abt 1773", "BET 1850 AND 1860"
+        /// becomes "bet 1850 and 1860"). Anything it can't read is shown as written.
         /// </summary>
         internal static string FormatDate(string gedcomDate)
         {
             if (string.IsNullOrWhiteSpace(gedcomDate)) return string.Empty;
 
-            string date = gedcomDate.Trim();
+            string[] words = gedcomDate.Trim().Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+            var parts = new List<string>();
+            var datePart = new List<string>();
 
-            // Strip GEDCOM qualifiers (ABT, BEF, AFT, etc.) for display purposes
-            string[] qualifiers = { "ABT ", "BEF ", "AFT ", "BET ", "AND ", "CAL ", "EST " };
-            foreach (var q in qualifiers)
+            void FlushDate()
             {
-                if (date.StartsWith(q, StringComparison.OrdinalIgnoreCase))
+                if (datePart.Count == 0) return;
+                parts.Add(FormatDatePart(string.Join(" ", datePart)));
+                datePart.Clear();
+            }
+
+            foreach (string word in words)
+            {
+                if (DateKeywords.Contains(word))
                 {
-                    date = date.Substring(q.Length).Trim();
-                    break;
+                    FlushDate();
+                    parts.Add(word.ToLowerInvariant());
+                }
+                else
+                {
+                    datePart.Add(word);
                 }
             }
+            FlushDate();
 
-            // Try to parse the date in various GEDCOM formats
-            string[] formats =
-            {
-                "d MMM yyyy",   // 24 AUG 1938
-                "d MMMM yyyy",  // 24 August 1938
-                "MMM yyyy",     // AUG 1938
-                "MMMM yyyy",    // August 1938
-                "yyyy",         // 1938
-                "d MMM yy",     // 24 AUG 38
-                "d MMMM yy",    // 24 August 38
-                "MMM yy",       // AUG 38
-                "MMMM yy",      // August 38
-                "yy"            // 38
-            };
+            return string.Join(" ", parts);
+        }
 
-            if (DateTime.TryParseExact(date, formats, CultureInfo.InvariantCulture,
-                DateTimeStyles.None, out DateTime parsed))
-            {
-                return parsed.ToString("MM/dd/yyyy");
-            }
+        private static readonly HashSet<string> DateKeywords = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "ABT", "BEF", "AFT", "BET", "AND", "CAL", "EST", "FROM", "TO", "INT"
+        };
 
-            // Fallback: try general parsing
-            if (DateTime.TryParse(date, CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTime parsed2))
-            {
-                return parsed2.ToString("MM/dd/yyyy");
-            }
+        /// <summary>
+        /// Formats one plain date (no qualifiers) at the precision it was written with.
+        /// </summary>
+        private static string FormatDatePart(string date)
+        {
+            if (DateTime.TryParseExact(date, new[] { "d MMM yyyy", "d MMMM yyyy" },
+                    CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTime day))
+                return day.ToString("MM/dd/yyyy", CultureInfo.InvariantCulture);
 
-            // Return the original string if we can't parse it
-            return gedcomDate.Trim();
+            if (DateTime.TryParseExact(date, new[] { "MMM yyyy", "MMMM yyyy" },
+                    CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTime month))
+                return month.ToString("MM/yyyy", CultureInfo.InvariantCulture);
+
+            // A year, or anything else (dual dates like 1750/51, date phrases), as written.
+            return date;
         }
 
         /// <summary>

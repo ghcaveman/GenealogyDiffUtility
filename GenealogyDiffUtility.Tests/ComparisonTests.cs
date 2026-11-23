@@ -616,7 +616,7 @@ public class ComparisonTests
                                    "0 @I2@ INDI\n1 NAME John /Doe/\n1 BIRT\n2 DATE 1900\n0 TRLR\n");
 
         string report = TreeDiffGenerator.Generate(one, two, includeDetails: false);
-        Assert.Contains("[EXTRA]     Doe, John (b. 01/01/1900) (duplicate)", report);
+        Assert.Contains("[EXTRA]     Doe, John (b. 1900) (duplicate)", report);
         Assert.Contains("Matches: 1 | Missing: 0 | Extra: 1", report);
     }
 
@@ -779,5 +779,130 @@ public class ComparisonTests
             Assert.Equal(first, main.LeftTree.GetSelectedNodeKey());
             Assert.Null(main.RightTree.GetSelectedNodeKey());
         }
+    }
+
+    // --- Dates are shown at the precision they were written with ---
+
+    [Theory]
+    [InlineData("24 AUG 1938", "08/24/1938")]
+    [InlineData("AUG 1938", "08/1938")]
+    [InlineData("1890", "1890")]
+    [InlineData("ABT 1773", "abt 1773")]
+    [InlineData("BEF 3 MAR 1901", "bef 03/03/1901")]
+    [InlineData("BET 1850 AND 1860", "bet 1850 and 1860")]
+    [InlineData("FROM JAN 1900 TO 1905", "from 01/1900 to 1905")]
+    [InlineData("1750/51", "1750/51")]
+    [InlineData("", "")]
+    public void FormatDate_KeepsThePrecisionAndQualifier(string gedcom, string shown)
+    {
+        Assert.Equal(shown, IndividualNode.FormatDate(gedcom));
+    }
+
+    [Fact]
+    public void DisplayName_YearOnlyDateIsNotShownAsJanuaryFirst()
+    {
+        var ctx = ParseText(Head + "0 @I1@ INDI\n1 NAME Josephine /Cerino/\n1 BIRT\n2 DATE 1890\n1 DEAT\n2 DATE FEB 1975\n0 TRLR\n");
+        Assert.Equal("Cerino, Josephine (b. 1890 d. 02/1975)", ctx.Individuals.Values.Single().DisplayName);
+    }
+
+    // --- Print reads the trees without changing them ---
+
+    private const string PersonWithEvent = Head +
+        "0 @I1@ INDI\n1 NAME Mary /Rossi/\n1 RESI\n2 DATE 1930\n2 PLAC Genova\n0 TRLR\n";
+
+    [Fact]
+    public void Print_WithDetailsWhileScreenHidesThem_LeavesTheTreesAlone()
+    {
+        var (main, left, _) = LoadPair(PersonWithEvent, PersonWithEvent);
+        main.ShowDetails = false;
+        var mary = left.Individuals.Values.Single();
+        mary.IsExpanded = true;
+
+        string html = TreePrinter.BuildHtml(main, new PrintOptions { Content = PrintContent.LeftTree, IncludeDetails = true });
+
+        Assert.Contains("Event: Residence (1930) - Genova", html);
+        Assert.False(main.ShowDetails);
+        Assert.False(main.LeftTree.ShowDetails);
+        Assert.Empty(mary.Details);
+        Assert.True(mary.IsExpanded);
+    }
+
+    [Fact]
+    public void Print_WithoutDetailsWhileScreenShowsThem_LeavesTheTreesAlone()
+    {
+        var (main, left, _) = LoadPair(PersonWithEvent, PersonWithEvent);
+        var mary = left.Individuals.Values.Single();
+        var detailRows = mary.Details.ToList();
+        Assert.NotEmpty(detailRows);
+
+        string html = TreePrinter.BuildHtml(main, new PrintOptions { Content = PrintContent.BothTrees, IncludeDetails = false });
+
+        Assert.DoesNotContain("Event: Residence", html);
+        Assert.Contains("Rossi, Mary", html);
+        Assert.True(main.ShowDetails);
+        Assert.True(detailRows.SequenceEqual(mary.Details)); // the very same row objects, not rebuilt
+    }
+
+    // --- Generated descriptions must name the record's owner ---
+
+    [Fact]
+    public void GeneratedDescription_NamingThePerson_IsIgnored_ButOtherTextCounts()
+    {
+        var plain = ParseText(Head + "0 @I1@ INDI\n1 NAME David Paul /Shebroe/\n1 BIRT\n2 DATE 1953\n0 TRLR\n");
+        var generated = ParseText(Head + "0 @I1@ INDI\n1 NAME David Paul /Shebroe/\n1 BIRT\n2 TYPE Birth of Shebroe, David Paul\n2 DATE 1953\n0 TRLR\n");
+        var otherName = ParseText(Head + "0 @I1@ INDI\n1 NAME David Paul /Shebroe/\n1 BIRT\n2 TYPE Birth of twins, David and Laura\n2 DATE 1953\n0 TRLR\n");
+
+        TreeDiffGenerator.Generate(plain, generated, includeDetails: true, out var same);
+        Assert.Equal(0, same.DetailDifferences);
+
+        TreeDiffGenerator.Generate(plain, otherName, includeDetails: true, out var differs);
+        Assert.Equal(1, differs.DetailDifferences);
+    }
+
+    [Fact]
+    public void GeneratedDescription_NamingBothSpouses_IsIgnored_ButHandWrittenTextCounts()
+    {
+        const string people = "0 @I1@ INDI\n1 NAME Philip /Crisara/\n1 FAMS @F1@\n0 @I2@ INDI\n1 NAME Tina Marie /Pittaluga/\n1 FAMS @F1@\n";
+        string Family(string marriage) => Head + people + "0 @F1@ FAM\n1 HUSB @I1@\n1 WIFE @I2@\n1 MARR\n" + marriage + "2 DATE 1990\n0 TRLR\n";
+
+        var plain = ParseText(Family(""));
+        var generated = ParseText(Family("2 TYPE Marriage of Crisara, Philip and Pittaluga, Tina Marie\n"));
+        var handWritten = ParseText(Family("2 TYPE Marriage of convenience, per family letters\n"));
+
+        TreeDiffGenerator.Generate(plain, generated, includeDetails: true, out var same);
+        Assert.Equal(0, same.DetailDifferences);
+
+        TreeDiffGenerator.Generate(plain, handWritten, includeDetails: true, out var differs);
+        Assert.Equal(1, differs.DetailDifferences);
+    }
+
+    [Fact]
+    public void GeneratedDescription_AlternateNameAndAdoptedWording_AreIgnored()
+    {
+        var plain = ParseText(Head + "0 @I1@ INDI\n1 NAME Kimberly W /White/\n1 NAME Kim /Smith/\n1 ADOP\n1 RESI\n2 DATE 1980\n0 TRLR\n");
+        var generated = ParseText(Head + "0 @I1@ INDI\n1 NAME Kimberly W /White/\n1 NAME Kim /Smith/\n1 ADOP\n2 TYPE Adopted of White, Kimberly W\n" +
+                                  "1 RESI\n2 TYPE Residence of Smith, Kim\n2 DATE 1980\n0 TRLR\n");
+
+        TreeDiffGenerator.Generate(plain, generated, includeDetails: true, out var summary);
+        Assert.Equal(0, summary.DetailDifferences);
+    }
+
+    [Fact]
+    public void GeneratedDescription_CutOffPartwayThroughAName_IsIgnored()
+    {
+        const string people = "0 @I1@ INDI\n1 NAME William Bernard /Pearsall/ Sr\n1 FAMS @F1@\n" +
+                              "0 @I2@ INDI\n1 NAME Rita Claire \"Mickey\" /Kronemeyer/\n1 FAMS @F1@\n";
+        string Family(string marriage) => Head + people + "0 @F1@ FAM\n1 HUSB @I1@\n1 WIFE @I2@\n1 MARR\n" + marriage + "2 DATE 13 MAY 1961\n0 TRLR\n";
+
+        var plain = ParseText(Family(""));
+        var cutOff = ParseText(Family("2 TYPE Marriage of Pearsall, William Bernard Sr and Kronemeyer, Rita Claire \"Mi\n"));
+        var shortText = ParseText(Family("2 TYPE Marriage of Pearsall, Wi\n"));
+
+        TreeDiffGenerator.Generate(plain, cutOff, includeDetails: true, out var same);
+        Assert.Equal(0, same.DetailDifferences);
+
+        // Short text isn't assumed to be cut off.
+        TreeDiffGenerator.Generate(plain, shortText, includeDetails: true, out var differs);
+        Assert.Equal(1, differs.DetailDifferences);
     }
 }

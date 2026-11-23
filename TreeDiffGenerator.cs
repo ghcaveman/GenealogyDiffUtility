@@ -614,22 +614,64 @@ namespace GenealogyDiffUtility
         }
 
         /// <summary>
-        /// True for text of the form "&lt;event name&gt; of &lt;anything&gt;", e.g.
-        /// "Birth of Altimare, Carmine" on a birth, which some programs fill in
-        /// automatically from the event type and the person's name.
+        /// True for text of the form "&lt;event name&gt; of &lt;owner's name&gt;", e.g.
+        /// "Birth of Altimare, Carmine" on Carmine Altimare's birth, or "Marriage of
+        /// Crisara, Philip and Pittaluga, Tina Marie" on their marriage, which some
+        /// programs fill in automatically. The text after "of" must be the person's
+        /// name (any of their names) or the spouses' names, so hand-written text that
+        /// merely starts the same way ("Marriage of convenience ...") still counts.
         /// </summary>
         private static bool IsGeneratedDescription(string value, GedcomEvent e)
         {
-            if (value.Length == 0) return false;
+            if (value.Length == 0 || e.OwnerNameKeys.Count == 0) return false;
             string name = e.Type == "EVEN" ? e.SubType.Trim() : e.EventName;
             if (name.Length == 0) return false;
             string v = N(value);
-            if (v.StartsWith(N(name) + " of ", StringComparison.Ordinal)) return true;
 
             // Some programs word the event differently in the description than
             // GEDCOM does (Gramps: "Adopted of Smith, John" on an ADOP).
-            return AlternateEventNames.TryGetValue(e.Type, out var names) &&
-                   names.Any(n => v.StartsWith(n + " of ", StringComparison.Ordinal));
+            var prefixes = new List<string> { N(name) + " of " };
+            if (AlternateEventNames.TryGetValue(e.Type, out var names))
+                prefixes.AddRange(names.Select(n => n + " of "));
+
+            foreach (var prefix in prefixes)
+            {
+                if (!v.StartsWith(prefix, StringComparison.Ordinal)) continue;
+                string rest = v.Substring(prefix.Length);
+                string owner = GedcomEvent.NameKey(rest);
+                if (owner.Length > 0 && e.OwnerNameKeys.Contains(owner)) return true;
+                if (value.Length >= TruncatedDescriptionLength && IsCutOffOwnerName(rest, e)) return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Some programs cut generated descriptions off at about 70 characters,
+        /// partway through a name ("Marriage of Pearsall, William Bernard Sr and
+        /// Kronemeyer, Rita Claire "Mi"). Only text at least this long is treated
+        /// as possibly cut off.
+        /// </summary>
+        private const int TruncatedDescriptionLength = 60;
+
+        /// <summary>
+        /// True when every word of <paramref name="rest"/> is one of the owner's name
+        /// words, except the last, which may be the start of one (it was cut off).
+        /// </summary>
+        private static bool IsCutOffOwnerName(string rest, GedcomEvent e)
+        {
+            var words = GedcomEvent.NameWords(rest);
+            if (words.Count < 2) return false;
+
+            foreach (var key in e.OwnerNameKeys)
+            {
+                var remaining = key.Split(' ').ToList();
+                bool fits = true;
+                for (int i = 0; i < words.Count - 1 && fits; i++)
+                    fits = remaining.Remove(words[i]);
+                if (fits && remaining.Any(w => w.StartsWith(words[^1], StringComparison.Ordinal)))
+                    return true;
+            }
+            return false;
         }
 
         private static readonly Dictionary<string, string[]> AlternateEventNames = new(StringComparer.Ordinal)

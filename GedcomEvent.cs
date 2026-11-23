@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace GenealogyDiffUtility
 {
@@ -45,6 +46,29 @@ namespace GenealogyDiffUtility
 
         /// <summary>Media attached directly here: pointers ("@O1@") or "file:&lt;path&gt;".</summary>
         public List<string> Media { get; } = new();
+
+        /// <summary>
+        /// The names of the record this event belongs to, each as a <see cref="NameKey"/>:
+        /// every name of the person, or every husband-and-wife name pair of the family
+        /// (and each spouse alone). Filled in by the parser, and used to recognize
+        /// descriptions a program generated from the event and the owner's name
+        /// ("Birth of Shebroe, David Paul", "Marriage of Crisara, Philip and Pittaluga, Tina Marie").
+        /// </summary>
+        public List<string> OwnerNameKeys { get; } = new();
+
+        /// <summary>
+        /// A name reduced to its words, lower-cased and sorted, ignoring punctuation and
+        /// the word "and", so "Shebroe, David Paul" and "David Paul Shebroe" are equal.
+        /// </summary>
+        internal static string NameKey(string text) =>
+            string.Join(" ", NameWords(text).OrderBy(w => w, StringComparer.Ordinal));
+
+        /// <summary>The words of a name, lower-cased, in order, without punctuation or "and".</summary>
+        internal static List<string> NameWords(string text) =>
+            System.Text.RegularExpressions.Regex
+                .Split(text.ToLowerInvariant(), @"[^\p{L}\p{N}']+")
+                .Where(w => w.Length > 0 && w != "and")
+                .ToList();
 
         /// <summary>
         /// True when this event is an internal system tag (e.g., "_PPEXCLUDE",

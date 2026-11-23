@@ -285,7 +285,7 @@ namespace GenealogyDiffUtility
                 person.Details.Clear();
                 if (_showDetails)
                 {
-                    BuildDetails(person);
+                    BuildDetails(person, person.Details.Add);
                 }
             }
 
@@ -294,7 +294,7 @@ namespace GenealogyDiffUtility
                 family.Details.Clear();
                 if (_showDetails)
                 {
-                    BuildFamilyDetails(family);
+                    BuildFamilyDetails(family, family.Details.Add);
                 }
             }
 
@@ -303,7 +303,7 @@ namespace GenealogyDiffUtility
                 note.Details.Clear();
                 if (_showDetails)
                 {
-                    BuildNoteDetails(note);
+                    BuildNoteDetails(note, note.Details.Add);
                 }
             }
 
@@ -312,7 +312,7 @@ namespace GenealogyDiffUtility
                 repo.Details.Clear();
                 if (_showDetails)
                 {
-                    BuildRepositoryDetails(repo);
+                    BuildRepositoryDetails(repo, repo.Details.Add);
                 }
             }
 
@@ -321,7 +321,7 @@ namespace GenealogyDiffUtility
                 source.Details.Clear();
                 if (_showDetails)
                 {
-                    BuildSourceDetails(source);
+                    BuildSourceDetails(source, source.Details.Add);
                 }
             }
         }
@@ -331,7 +331,7 @@ namespace GenealogyDiffUtility
         /// reference this note and appends them as detail sub-nodes, providing
         /// a reverse-lookup of which records a note is associated with.
         /// </summary>
-        private void BuildNoteDetails(NoteNode note)
+        private void BuildNoteDetails(NoteNode note, Action<NoteDetailNode> add)
         {
             // Individuals that reference this note
             foreach (var person in _context.Individuals.Values
@@ -340,7 +340,7 @@ namespace GenealogyDiffUtility
             {
                 if (person.NoteIds.Contains(note.Id))
                 {
-                    note.Details.Add(new NoteDetailNode
+                    add(new NoteDetailNode
                     {
                         Role = "Individual",
                         DisplayName = $"Individual: {person.DisplayName}"
@@ -355,7 +355,7 @@ namespace GenealogyDiffUtility
             {
                 if (family.NoteIds.Contains(note.Id))
                 {
-                    note.Details.Add(new NoteDetailNode
+                    add(new NoteDetailNode
                     {
                         Role = "Family",
                         DisplayName = $"Family: {family.DisplayName}"
@@ -370,7 +370,7 @@ namespace GenealogyDiffUtility
             {
                 if (source.NoteIds.Contains(note.Id))
                 {
-                    note.Details.Add(new NoteDetailNode
+                    add(new NoteDetailNode
                     {
                         Role = "Source",
                         DisplayName = $"Source: {source.Title}"
@@ -385,7 +385,7 @@ namespace GenealogyDiffUtility
             {
                 if (repo.NoteIds.Contains(note.Id))
                 {
-                    note.Details.Add(new NoteDetailNode
+                    add(new NoteDetailNode
                     {
                         Role = "Repository",
                         DisplayName = $"Repository: {repo.Name}"
@@ -399,7 +399,7 @@ namespace GenealogyDiffUtility
         /// cross-reference) and appends them as detail sub-nodes, providing a
         /// reverse-lookup of which sources are held by this repository.
         /// </summary>
-        private void BuildRepositoryDetails(RepositoryNode repo)
+        private void BuildRepositoryDetails(RepositoryNode repo, Action<RepositoryDetailNode> add)
         {
             // Sources that reference this repository
             foreach (var source in _context.Sources.Values
@@ -409,7 +409,7 @@ namespace GenealogyDiffUtility
                 if (!string.IsNullOrEmpty(source.RepositoryId) &&
                     source.RepositoryId == repo.Id)
                 {
-                    repo.Details.Add(new RepositoryDetailNode
+                    add(new RepositoryDetailNode
                     {
                         Role = "Source",
                         DisplayName = $"Source: {source.Title}"
@@ -426,7 +426,7 @@ namespace GenealogyDiffUtility
         /// event is shown alongside the record (e.g., "Individual: John Smith —
         /// Birth").
         /// </summary>
-        private void BuildSourceDetails(SourceNode source)
+        private void BuildSourceDetails(SourceNode source, Action<SourceDetailNode> add)
         {
             // Individuals that reference this source (directly or via their events)
             foreach (var person in _context.Individuals.Values
@@ -436,7 +436,7 @@ namespace GenealogyDiffUtility
                 // Direct (record-level) citation
                 if (person.SourceIds.Contains(source.Id))
                 {
-                    source.Details.Add(new SourceDetailNode
+                    add(new SourceDetailNode
                     {
                         Role = "Individual",
                         DisplayName = $"Individual: {person.DisplayName}"
@@ -446,7 +446,7 @@ namespace GenealogyDiffUtility
                 // Event-level citations — one entry per event that cites this source
                 foreach (var evt in person.Events.Where(e => e.SourceIds.Contains(source.Id) && !e.IsInternal))
                 {
-                    source.Details.Add(new SourceDetailNode
+                    add(new SourceDetailNode
                     {
                         Role = "Individual",
                         DisplayName = $"Individual: {person.DisplayName} — {evt.DisplayName}"
@@ -462,7 +462,7 @@ namespace GenealogyDiffUtility
                 // Direct (record-level) citation
                 if (family.SourceIds.Contains(source.Id))
                 {
-                    source.Details.Add(new SourceDetailNode
+                    add(new SourceDetailNode
                     {
                         Role = "Family",
                         DisplayName = $"Family: {family.DisplayName}"
@@ -472,7 +472,7 @@ namespace GenealogyDiffUtility
                 // Event-level citations — one entry per event that cites this source
                 foreach (var evt in family.Events.Where(e => e.SourceIds.Contains(source.Id) && !e.IsInternal))
                 {
-                    source.Details.Add(new SourceDetailNode
+                    add(new SourceDetailNode
                     {
                         Role = "Family",
                         DisplayName = $"Family: {family.DisplayName} — {evt.DisplayName}"
@@ -488,12 +488,12 @@ namespace GenealogyDiffUtility
         /// child is shown as a "Child" entry, and each event is shown as an
         /// "Event" entry.
         /// </summary>
-        private void BuildFamilyDetails(FamilyNode family)
+        private void BuildFamilyDetails(FamilyNode family, Action<TreeNodeBase> add)
         {
             // Husband (if resolved)
             if (family.Husband != null)
             {
-                family.Details.Add(new FamilyDetailNode
+                add(new FamilyDetailNode
                 {
                     Role = "Spouse",
                     DisplayName = $"Husband: {family.Husband.DisplayName}"
@@ -503,7 +503,7 @@ namespace GenealogyDiffUtility
             // Wife (if resolved)
             if (family.Wife != null)
             {
-                family.Details.Add(new FamilyDetailNode
+                add(new FamilyDetailNode
                 {
                     Role = "Spouse",
                     DisplayName = $"Wife: {family.Wife.DisplayName}"
@@ -515,7 +515,7 @@ namespace GenealogyDiffUtility
             {
                 if (_context.Individuals.TryGetValue(childId, out var child))
                 {
-                    family.Details.Add(new FamilyDetailNode
+                    add(new FamilyDetailNode
                     {
                         Role = "Child",
                         DisplayName = $"Child: {child.DisplayName}"
@@ -526,7 +526,7 @@ namespace GenealogyDiffUtility
             // Note text written directly on the family
             foreach (var inlineNote in family.InlineNotes)
             {
-                family.Details.Add(new FamilyDetailNode
+                add(new FamilyDetailNode
                 {
                     Role = "Note",
                     DisplayName = $"Note: {inlineNote}"
@@ -543,7 +543,7 @@ namespace GenealogyDiffUtility
                     DisplayName = $"Event: {evt.DisplayName}"
                 };
                 AddEventSources(eventNode, evt);
-                family.Details.Add(eventNode);
+                add(eventNode);
             }
         }
 
@@ -591,12 +591,12 @@ namespace GenealogyDiffUtility
         /// Resolves the spouses, children, notes, and events for a single
         /// individual and appends them as detail sub-nodes.
         /// </summary>
-        private void BuildDetails(IndividualNode person)
+        private void BuildDetails(IndividualNode person, Action<TreeNodeBase> add)
         {
             // Alternate names (second and later NAME lines)
             foreach (var altName in person.AlternateNames)
             {
-                person.Details.Add(new IndividualDetailNode
+                add(new IndividualDetailNode
                 {
                     Role = "Name",
                     DisplayName = $"Also known as: {altName}"
@@ -613,7 +613,7 @@ namespace GenealogyDiffUtility
                 var spouse = isHusband ? family.Wife : family.Husband;
                 if (spouse != null)
                 {
-                    person.Details.Add(new IndividualDetailNode
+                    add(new IndividualDetailNode
                     {
                         Role = "Spouse",
                         DisplayName = $"Spouse: {spouse.DisplayName}"
@@ -624,7 +624,7 @@ namespace GenealogyDiffUtility
                 {
                     if (_context.Individuals.TryGetValue(childId, out var child))
                     {
-                        person.Details.Add(new IndividualDetailNode
+                        add(new IndividualDetailNode
                         {
                             Role = "Child",
                             DisplayName = $"Child: {child.DisplayName}"
@@ -638,7 +638,7 @@ namespace GenealogyDiffUtility
             {
                 if (_context.Notes.TryGetValue(noteId, out var note))
                 {
-                    person.Details.Add(new IndividualDetailNode
+                    add(new IndividualDetailNode
                     {
                         Role = "Note",
                         DisplayName = $"Note: {note.DisplayName}"
@@ -649,7 +649,7 @@ namespace GenealogyDiffUtility
             // Note text written directly on the person
             foreach (var inlineNote in person.InlineNotes)
             {
-                person.Details.Add(new IndividualDetailNode
+                add(new IndividualDetailNode
                 {
                     Role = "Note",
                     DisplayName = $"Note: {inlineNote}"
@@ -666,16 +666,36 @@ namespace GenealogyDiffUtility
                     DisplayName = $"Event: {evt.DisplayName}"
                 };
                 AddEventSources(eventNode, evt);
-                person.Details.Add(eventNode);
+                add(eventNode);
             }
         }
 
         /// <summary>
-        /// Returns the stable key of the currently selected node, or null if none.
+        /// Builds the detail rows for a record without touching the tree, whatever
+        /// <see cref="ShowDetails"/> is set to. Print uses this, so printing with a
+        /// different Details choice doesn't rebuild (and collapse) the rows on screen.
         /// </summary>
+        public IReadOnlyList<object> BuildDetailRows(object node)
+        {
+            var rows = new List<object>();
+            if (_context == null) return rows;
+            switch (node)
+            {
+                case IndividualNode person: BuildDetails(person, rows.Add); break;
+                case FamilyNode family: BuildFamilyDetails(family, rows.Add); break;
+                case NoteNode note: BuildNoteDetails(note, rows.Add); break;
+                case RepositoryNode repo: BuildRepositoryDetails(repo, rows.Add); break;
+                case SourceNode source: BuildSourceDetails(source, rows.Add); break;
+            }
+            return rows;
+        }
+
         /// <summary>The selected node, or null if nothing is selected.</summary>
         public object? GetSelectedNode() => _nodeMap.Values.FirstOrDefault(n => n.IsSelected);
 
+        /// <summary>
+        /// Returns the stable key of the currently selected node, or null if none.
+        /// </summary>
         public string? GetSelectedNodeKey()
         {
             foreach (var tn in _nodeMap.Values)

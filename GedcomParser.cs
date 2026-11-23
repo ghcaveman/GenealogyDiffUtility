@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Text;
 
 namespace GenealogyDiffUtility
@@ -287,7 +288,42 @@ namespace GenealogyDiffUtility
             }
 
             TrimTextFields(context);
+            SetEventOwnerNames(context);
             return context;
+        }
+
+        /// <summary>
+        /// Records each event's owner names (see <see cref="GedcomEvent.OwnerNameKeys"/>):
+        /// a person's names, or a family's spouse names, alone and in pairs.
+        /// </summary>
+        private static void SetEventOwnerNames(GedcomTreeContext context)
+        {
+            static List<string> NamesOf(IndividualNode? p) =>
+                p == null ? new List<string>()
+                          : new[] { p.FullName }.Concat(p.AlternateNames).Where(n => n.Length > 0).ToList();
+
+            foreach (var person in context.Individuals.Values)
+            {
+                var keys = NamesOf(person).Select(GedcomEvent.NameKey).Distinct().ToList();
+                foreach (var evt in person.Events) evt.OwnerNameKeys.AddRange(keys);
+            }
+
+            foreach (var family in context.Families.Values)
+            {
+                context.Individuals.TryGetValue(family.HusbandId, out var husband);
+                context.Individuals.TryGetValue(family.WifeId, out var wife);
+                var husbandNames = NamesOf(husband);
+                var wifeNames = NamesOf(wife);
+
+                var keys = new HashSet<string>(StringComparer.Ordinal);
+                foreach (var h in husbandNames) keys.Add(GedcomEvent.NameKey(h));
+                foreach (var w in wifeNames) keys.Add(GedcomEvent.NameKey(w));
+                foreach (var h in husbandNames)
+                    foreach (var w in wifeNames)
+                        keys.Add(GedcomEvent.NameKey(h + " " + w));
+
+                foreach (var evt in family.Events) evt.OwnerNameKeys.AddRange(keys);
+            }
         }
 
         private static void ParseHeaderLine(GedcomHeader header, int level, string tag, string data,
