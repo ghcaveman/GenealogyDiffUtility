@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.IO;
 using System.Linq;
 
 namespace GenealogyDiffUtility
@@ -64,6 +65,18 @@ namespace GenealogyDiffUtility
             private set => RaiseAndSetIfChanged(ref _diffText, value);
         }
 
+        private string _healthReportText = "Load a file to view citation and media health.";
+        /// <summary>
+        /// Plain-text Citation and Media Health report for this tree.
+        /// </summary>
+        public string HealthReportText
+        {
+            get => _healthReportText;
+            private set => RaiseAndSetIfChanged(ref _healthReportText, value);
+        }
+
+        public string? FilePath { get; private set; }
+
         /// <summary>
         /// The parsed GEDCOM tree context, used by the edit dialog to look up
         /// spouses and children associated with an individual.
@@ -94,11 +107,15 @@ namespace GenealogyDiffUtility
         // The unified hierarchical collection your TreeView control will bind onto
         public ObservableCollection<TreeGroupNode> TreeNodes { get; } = new();
 
-        public void LoadTree(GedcomTreeContext context, string fileName, string rawText)
+        public void LoadTree(GedcomTreeContext context, string fileName, string rawText, string? filePath = null)
         {
             _context = context;
             FileName = fileName;
+            FilePath = filePath;
             RawFileText = rawText;
+
+            string? baseDir = !string.IsNullOrEmpty(filePath) ? Path.GetDirectoryName(filePath) : null;
+            HealthReportText = CitationMediaHealthReport.Generate(_context, FileName, baseDir);
 
             OnPropertyChanged(nameof(SourceSoftware));
             OnPropertyChanged(nameof(GedcomVersion));

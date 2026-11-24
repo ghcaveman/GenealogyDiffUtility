@@ -284,6 +284,9 @@ namespace GenealogyDiffUtility
                 sb.AppendLine($"Changed: {totals.Changed} ({100.0 * totals.Changed / total:F1}%)");
             }
 
+            sb.Append(CitationMediaHealthReport.GenerateComparison(thisCtx, otherCtx,
+                FileLabel(thisSide, thisFileName), FileLabel(otherSide, otherFileName)));
+
             return BuildSummaryBlock(summary) +
                    BuildKey(includeDetails, FileLabel(thisSide, thisFileName), FileLabel(otherSide, otherFileName)) +
                    sb.ToString();

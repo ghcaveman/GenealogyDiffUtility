@@ -114,6 +114,10 @@
             <TabItem Header="Diff">
                 <TextBox Text="{Binding DiffText}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap" FontFamily="Courier New"/>
             </TabItem>
+
+            <TabItem Header="Health">
+                <TextBox Text="{Binding HealthReportText}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap" FontFamily="Courier New"/>
+            </TabItem>
         </TabControl>
     </Grid>
 </UserControl>

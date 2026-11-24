@@ -233,7 +233,7 @@ namespace GenealogyDiffUtility
                 {
                     string rawText = await File.ReadAllTextAsync(filePath, GedcomParser.DetectEncoding(filePath));
                     GedcomTreeContext context = GedcomParser.Parse(filePath);
-                    vm.LoadTree(context, Path.GetFileName(filePath), rawText);
+                    vm.LoadTree(context, Path.GetFileName(filePath), rawText, filePath);
                 }
                 catch (Exception ex)
                 {
